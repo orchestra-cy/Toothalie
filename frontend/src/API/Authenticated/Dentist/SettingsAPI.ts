@@ -20,9 +20,9 @@ export async function updateSettingsDentist(schedules: any[]) {
       },
     );
 
-    if (!result.ok) {
-      throw new Error(`Error ${result.status}`);
-    }
+    // if (!result.ok) {
+    //   throw new Error(`Error ${result.status}`);
+    // }
 
     const data = await result.json();
 
@@ -31,8 +31,7 @@ export async function updateSettingsDentist(schedules: any[]) {
     return data;
   } catch (error) {
     console.error("Failed to update dentist settings:", error);
-
-    throw error;
+    return error
   }
 }
 

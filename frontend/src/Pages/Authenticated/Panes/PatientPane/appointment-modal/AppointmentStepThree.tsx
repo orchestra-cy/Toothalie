@@ -75,7 +75,7 @@ export default function AppointmentStepThree({
   useEffect(() => {
     if (ToothalieUser) {
       setContactFirstName(ToothalieUser.firstName ?? "");
-      setContactLastName(ToothalieUser.lastName ?? "");
+      setContactLastName(ToothalieUser.lastName ?? "N/A");
       setContactEmail(ToothalieUser.email ?? "");
     }
   }, []);

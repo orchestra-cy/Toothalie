@@ -27,7 +27,11 @@ export function SettingsPane() {
   const [dentistInfo, setDentistInfo] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  
+  // States for tracking schedules
   const [schedules, setSchedules] = useState<any[]>([]);
+  const [initialSchedules, setInitialSchedules] = useState<any[]>([]); // ADDED: To track if changes were made
+  
   const [userInfo, setUserInfo] = useState<any>(null);
   const [alert, setAlert] = useState({
     show: false,
@@ -91,12 +95,12 @@ export function SettingsPane() {
           result.schedule || [],
         );
         setSchedules(transformedSchedules);
+        setInitialSchedules(JSON.parse(JSON.stringify(transformedSchedules))); // ADDED: Set baseline
 
         localStorage.setItem(
           "loginedDentist",
           JSON.stringify({
             dentist: result.dentist,
-            // user: userInfoBase.user,
             schedule: result.schedule,
           }),
         );
@@ -118,6 +122,7 @@ export function SettingsPane() {
 
       const transformedSchedules = transformScheduleData(parsed.schedule || []);
       setSchedules(transformedSchedules);
+      setInitialSchedules(JSON.parse(JSON.stringify(transformedSchedules))); // ADDED: Set baseline
       setLoading(false);
     } else {
       fetchDentist();
@@ -198,16 +203,50 @@ export function SettingsPane() {
     setSchedules(updated);
   };
 
+  // ADDED: Duplicate checker function
+  const checkForDuplicates = () => {
+    const seenTimes = new Set();
+    for (const schedule of schedules) {
+      for (const slot of schedule.time_slots) {
+        const key = `${schedule.day_of_week}-${slot.time}`;
+        if (seenTimes.has(key)) {
+          return { hasDuplicate: true, duplicateDetail: `${schedule.day_of_week} at ${slot.time}` };
+        }
+        seenTimes.add(key);
+      }
+    }
+    return { hasDuplicate: false };
+  };
+
+  // ADDED: Derive if changes were made
+  const hasChanges = JSON.stringify(schedules) !== JSON.stringify(initialSchedules);
+
   const handleSaveChanges = async () => {
     try {
       if (!dentistInfo?.id) throw new Error("Dentist info missing");
+
+      // ADDED: Validate duplicates before saving
+      const duplicateCheck = checkForDuplicates();
+      if (duplicateCheck.hasDuplicate) {
+        setAlert({
+          show: true,
+          type: "error",
+          title: "Duplicate Schedule Found",
+          message: `You have duplicate time slots for ${duplicateCheck.duplicateDetail}. Please remove duplicates before saving.`,
+        });
+        return; 
+      }
 
       const apiFormat = convertToApiFormat(schedules);
       console.log("Saving schedules:", apiFormat);
 
       const res = await updateSettingsDentist(apiFormat);
-
+      console.log("Update response:", res);
       if (res.status === "ok") {
+        
+        // ADDED: Reset the baseline to the newly saved data
+        setInitialSchedules(JSON.parse(JSON.stringify(schedules)));
+
         localStorage.setItem(
           "loginedDentist",
           JSON.stringify({
@@ -219,15 +258,26 @@ export function SettingsPane() {
 
         setAlert({
           show: true,
-          type: "success", // success, error, warning, info
+          type: "success", 
           title: "Saved Successfully",
-          message: "Schedule Save Successfully",
+          message: "Schedule Saved Successfully",
         });
       } else {
+        setAlert({
+          show: true,
+          type: "error", 
+          title: "Error Saving",
+          message: res.message,
+        });
         console.error("Failed to save schedules:", res);
       }
     } catch (err) {
-      console.error("Error saving schedules:", err);
+      setAlert({
+        show: true,
+        type: "error", 
+        title: "Error Saving",
+        message: String(err),
+      });
     }
   };
 
@@ -279,7 +329,13 @@ export function SettingsPane() {
           schedules.length > 0 ? (
             <button
               onClick={handleSaveChanges}
-              className="flex items-center gap-2 px-6 py-3 bg-slate-900 text-white text-sm font-bold rounded-xl hover:bg-black transition-all shadow-lg active:scale-95"
+              disabled={!hasChanges} // ADDED: Disable if no changes
+              className={`flex items-center gap-2 px-6 py-3 text-sm font-bold rounded-xl transition-all shadow-lg 
+                ${hasChanges 
+                  ? "bg-slate-900 text-white hover:bg-black active:scale-95" 
+                  : "bg-slate-200 text-slate-400 cursor-not-allowed shadow-none" // ADDED: Disabled styling
+                }
+              `}
             >
               <Save className="w-4 h-4" />
               Save Configuration
@@ -355,11 +411,9 @@ export function SettingsPane() {
                     </div>
                   </div>
 
-                  {/* START OF REPLACED TIME INPUT SECTION */}
                   <div className="p-5 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                     {sched.time_slots?.map(
                       (timeSlot: any, timeIndex: number) => {
-                        // Split the "09:00-10:00" string into start and end times
                         const [startTime = "09:00", endTime = "10:00"] = (
                           timeSlot.time || ""
                         ).split("-");
@@ -373,9 +427,7 @@ export function SettingsPane() {
                               <Clock size={14} />
                             </div>
 
-                            {/* Time Inputs Wrapper */}
                             <div className="flex items-center justify-center w-full pl-8 pr-8 py-1.5">
-                              {/* Start Time */}
                               <select
                                 value={startTime.trim()}
                                 onChange={(e) =>
@@ -399,7 +451,6 @@ export function SettingsPane() {
                                 -
                               </span>
 
-                              {/* End Time */}
                               <select
                                 value={endTime.trim()}
                                 onChange={(e) =>
@@ -441,7 +492,6 @@ export function SettingsPane() {
                       <Plus size={14} /> Add Slot
                     </button>
                   </div>
-                  {/* END OF REPLACED TIME INPUT SECTION */}
                 </div>
               ))}
             </div>
@@ -449,7 +499,6 @@ export function SettingsPane() {
         </div>
       </SettingsSection>
 
-      {/* Additional Settings Component */}
       <SettingsService />
 
       <Alert
