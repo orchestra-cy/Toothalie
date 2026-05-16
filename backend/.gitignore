@@ -14,3 +14,4 @@ TODO.md
 ###< lexik/jwt-authentication-bundle ###
 .env
 POST.txt
+config/firebase_credentials.json

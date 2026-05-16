@@ -13,8 +13,9 @@
         "doctrine/doctrine-bundle": "^2.16",
         "doctrine/doctrine-migrations-bundle": "^3.4",
         "doctrine/orm": "^3.5",
-        "google/apiclient": "*",
+        "firebase/php-jwt": "^7.0",
         "knpuniversity/oauth2-client-bundle": "^2.20",
+        "kreait/firebase-php": "*",
         "league/oauth2-google": "^4.2",
         "lexik/jwt-authentication-bundle": "*",
         "nelmio/cors-bundle": "^2.5",
@@ -29,6 +30,7 @@
         "symfony/framework-bundle": "7.3.*",
         "symfony/http-client": "7.3.*",
         "symfony/mailer": "7.3.*",
+        "symfony/mercure": "*",
         "symfony/messenger": "7.3.*",
         "symfony/property-access": "7.3.*",
         "symfony/property-info": "7.3.*",
@@ -37,7 +39,9 @@
         "symfony/serializer": "7.3.*",
         "symfony/twig-bundle": "7.3.*",
         "symfony/validator": "7.3.*",
-        "symfony/yaml": "7.3.*"
+        "symfony/yaml": "7.3.*",
+        "workerman/channel": "^1.2",
+        "workerman/workerman": "*"
     },
     "config": {
         "allow-plugins": {
