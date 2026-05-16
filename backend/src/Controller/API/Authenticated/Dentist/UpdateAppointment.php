@@ -8,7 +8,8 @@ use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\Routing\Attribute\Route;
 use Doctrine\DBAL\Connection;
 use App\Service\ActivityLogger;
-
+use App\Service\FcmService;
+use App\Service\WebSocketNotificationService;
 class UpdateAppointment extends AbstractController
 {
     #[
@@ -22,6 +23,8 @@ class UpdateAppointment extends AbstractController
         Request $req,
         Connection $connection,
         ActivityLogger $logger,
+        FcmService $fcmService,
+        WebSocketNotificationService $wsNotification,
     ): JsonResponse {
         date_default_timezone_set("Asia/Manila");
         try {
@@ -86,6 +89,55 @@ class UpdateAppointment extends AbstractController
                 $user,
                 ["appointment_snapshot" => (object) $appointment],
             );
+
+            // FCM PROCESSS
+            // FCM PROCESSS
+            // FCM PROCESSS
+
+            // find the patient associated with the appointment to get their FCM token
+            $patientData = $connection->fetchAssociative(
+                "SELECT u.fcm_token, u.email
+                         FROM appointment a
+                         JOIN user u ON a.patient_id = u.id
+                         WHERE a.id = ?",
+                [$appointmentID],
+            );
+
+            // if ($patientData && $patientData["fcm_token"]) {
+            //     $title = "Appointment Update";
+            //     $message =
+            //         "Your appointment status has been updated to: " .
+            //         strtoupper($status);
+
+            //     // You can customize the message based on the status
+            //     if ($status === "accepted") {
+            //         $message =
+            //             "Great news! The dentist has accepted your appointment schedule.";
+            //     } elseif ($status === "rejected") {
+            //         $message =
+            //             "Your appointment was declined. Please check the app for details or to reschedule.";
+            //     }
+
+            //     $fcmService->sendAppointmentNotification(
+            //         $patientData["fcm_token"],
+            //         $title,
+            //         $message,
+            //         ["appointmentId" => (string) $appointmentID],
+            //     );
+            // }
+            if ($patientData) {
+                $patientId = $connection->fetchOne(
+                    "SELECT patient_id FROM appointment WHERE id = ?",
+                    [$appointmentID],
+                );
+
+                // Send real-time notification via WebSocket
+                $wsNotification->notifyAppointmentUpdate(
+                    (int) $patientId,
+                    $appointmentID,
+                    $status,
+                );
+            }
 
             return new JsonResponse([
                 "status" => "success",

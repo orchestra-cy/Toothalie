@@ -8,6 +8,8 @@ use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\Routing\Attribute\Route;
 use Doctrine\DBAL\Connection;
 use App\Service\ActivityLogger;
+use App\Service\WebSocketNotificationService;
+use App\Entity\User;
 
 class UpdateAppointment extends AbstractController
 {
@@ -27,10 +29,20 @@ class UpdateAppointment extends AbstractController
         Request $req,
         Connection $connection,
         ActivityLogger $logger,
+        WebSocketNotificationService $wsNotification,
     ): JsonResponse {
         try {
             // authenticated user
             $user = $this->getUser();
+            if (!$user instanceof User) {
+                return new JsonResponse(
+                    [
+                        "status" => "error",
+                        "message" => "Invalid user",
+                    ],
+                    401,
+                );
+            }
             $userRole = $user->getRoles();
             if (!in_array("ROLE_PATIENT", $userRole)) {
                 return new JsonResponse(
@@ -110,6 +122,22 @@ class UpdateAppointment extends AbstractController
                 "APPOINTMENT_UPDATED",
                 "updated appointment ID {$appointmentID}",
             );
+
+            // Notify dentist of patient's update
+            $dentistId = $connection->fetchOne(
+                "SELECT dentist_id FROM appointment WHERE id = ?",
+                [$appointmentID],
+            );
+            $patientName = $user->getUsername() ?? "Patient";
+
+            if ($dentistId) {
+                $wsNotification->notifyDentistAppointmentUpdate(
+                    (int) $dentistId,
+                    $appointmentID,
+                    $patientName,
+                    "Updated appointment details",
+                );
+            }
 
             return new JsonResponse([
                 "status" => "ok",

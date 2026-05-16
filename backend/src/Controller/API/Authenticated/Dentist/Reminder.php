@@ -8,6 +8,8 @@ use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\Routing\Attribute\Route;
 use Doctrine\DBAL\Connection;
 use App\Service\ActivityLogger;
+use App\Service\WebSocketNotificationService;
+use App\Entity\User;
 
 class Reminder extends AbstractController
 {
@@ -16,95 +18,120 @@ class Reminder extends AbstractController
         Request $req,
         Connection $connection,
         ActivityLogger $logger,
+        WebSocketNotificationService $wsNotification,
     ): JsonResponse {
         date_default_timezone_set("Asia/Manila");
 
         try {
             $user = $this->getUser();
+            if (!$user instanceof User) {
+                return new JsonResponse([
+                    "status" => "error",
+                    "message" => "Invalid user",
+                ], 401);
+            }
+            
             $userRole = $user->getRoles();
             if (!in_array("ROLE_DENTIST", $userRole)) {
-                return new JsonResponse(
-                    [
-                        "status" => "error",
-                        "message" => "Forbidden",
-                    ],
-                    403,
-                );
+                return new JsonResponse([
+                    "status" => "error",
+                    "message" => "Forbidden",
+                ], 403);
             }
 
             $data = json_decode($req->getContent(), true);
-
-            $payload = $data["payload"] ?? null;
             $appointmentID = $data["id"] ?? null;
 
-            if (!$payload || !$appointmentID) {
-                return new JsonResponse(
-                    [
-                        "status" => "error",
-                        "message" => "Missing payload or id",
-                    ],
-                    400,
-                );
+            // 1. EXTRACT RAW PAYLOAD
+            $rawPayload = $data["payload"] ?? null;
+            $payloadArray = is_string($rawPayload) ? json_decode($rawPayload, true) : $rawPayload;
+
+            if (!$rawPayload || !$appointmentID) {
+                return new JsonResponse([
+                    "status" => "error",
+                    "message" => "Missing payload or id",
+                ], 400);
             }
 
-            // Check if reminder already exists
+            // 2. EXTRACT SPECIFIC ATTRIBUTES FOR THE NOTIFICATION
+            $aptDate = $payloadArray[0]["date"] ?? "your upcoming appointment";
+            $startTime = $payloadArray[0]["slots"][0]["startTime"] ?? "";
+            $endTime = $payloadArray[0]["slots"][0]["endTime"] ?? "";
+            $extractedMessage = $payloadArray[0]["slots"][0]["message"] ?? "";
+
+            // 3. GET DENTIST NAME SAFELY (Fallback to "Your Dentist" if not found)
+            $dentistName = "Your Dentist";
+            if (method_exists($user, 'getUserIdentifier') && $user->getUserIdentifier()) {
+                $dentistName = $user->getUserIdentifier();
+            } elseif (method_exists($user, 'getUsername') && $user->getUsername()) {
+                $dentistName = $user->getUsername();
+            }
+
+            // 4. UPSERT INTO DATABASE (Save the FULL structure, not just the message)
             $existing = $connection->fetchAssociative(
                 "SELECT * FROM reminder WHERE appointment_id = ?",
                 [$appointmentID],
             );
 
+            $dbInformation = is_string($rawPayload) ? $rawPayload : json_encode($rawPayload);
+
             if ($existing) {
-                // Update
                 $connection->update(
                     "reminder",
-                    [
-                        "information" => json_encode($payload),
-                    ],
+                    ["information" => $dbInformation],
                     ["appointment_id" => $appointmentID],
                 );
 
                 $actionKey = "REMINDER_UPDATED";
-                $message = "Reminder updated for appointmentID {$appointmentID}";
-                $snapshotData = $existing; // Pass array, logger handles serialization
+                $logMessage = "Reminder updated for appointmentID {$appointmentID}";
             } else {
-                // Insert
                 $connection->insert("reminder", [
                     "appointment_id" => $appointmentID,
-                    "information" => json_encode($payload),
+                    "information" => $dbInformation,
                 ]);
 
                 $actionKey = "REMINDER_CREATED";
-                $message = "Reminder created for appointmentID {$appointmentID}";
-                $snapshotData = $payload;
+                $logMessage = "Reminder created for appointmentID {$appointmentID}";
             }
 
             // Log the action via Service
-            $logger->log($actionKey, $message, null, [
+            $logger->log($actionKey, $logMessage, null, [
                 "actor_type" => "DENTIST",
                 "appointment_id" => $appointmentID,
-                "snapshot" => $snapshotData,
+                "snapshot" => $rawPayload,
             ]);
+
+            // 5. SEND BEAUTIFUL NOTIFICATION
+            $patientId = $connection->fetchOne(
+                "SELECT patient_id FROM appointment WHERE id = ?",
+                [$appointmentID],
+            );
+
+            if ($patientId) {
+                // Construct the base message
+                $timeString = ($startTime && $endTime) ? " between {$startTime} - {$endTime}" : "";
+                $friendlyNotificationText = "Dr. {$dentistName} set a reminder for {$aptDate}{$timeString}.";
+                
+                // Append the specific message if the dentist wrote one
+                if (!empty(trim($extractedMessage))) {
+                    $friendlyNotificationText .= " Note: {$extractedMessage}";
+                }
+
+                $wsNotification->notifyReminder(
+                    (int) $patientId,
+                    $appointmentID,
+                    $friendlyNotificationText,
+                );
+            }
 
             return new JsonResponse([
                 "status" => "success",
                 "message" => "Reminder saved successfully",
             ]);
+            
         } catch (\Exception $e) {
-            // Log error
-            $logger->log(
-                "ERROR",
-                "Failed to save reminder: " . $e->getMessage(),
-                null,
-                ["actor_type" => "DENTIST"],
-            );
-
-            return new JsonResponse(
-                [
-                    "status" => "error",
-                    "message" => $e->getMessage(),
-                ],
-                500,
-            );
+            $logger->log("ERROR", "Failed to save reminder: " . $e->getMessage(), null, ["actor_type" => "DENTIST"]);
+            return new JsonResponse(["status" => "error", "message" => $e->getMessage()], 500);
         }
     }
 
@@ -118,25 +145,14 @@ class Reminder extends AbstractController
             $user = $this->getUser();
             $userRole = $user->getRoles();
             if (!in_array("ROLE_DENTIST", $userRole)) {
-                return new JsonResponse(
-                    [
-                        "status" => "error",
-                        "message" => "Forbidden",
-                    ],
-                    403,
-                );
+                return new JsonResponse(["status" => "error", "message" => "Forbidden"], 403);
             }
+            
             $data = json_decode($req->getContent(), true);
             $appointmentID = $data["id"] ?? null;
 
             if (!$appointmentID) {
-                return new JsonResponse(
-                    [
-                        "status" => "error",
-                        "message" => "Missing id",
-                    ],
-                    400,
-                );
+                return new JsonResponse(["status" => "error", "message" => "Missing id"], 400);
             }
 
             $reminder = $connection->fetchAssociative(
@@ -157,22 +173,10 @@ class Reminder extends AbstractController
                 "message" => "Reminder fetched successfully",
                 "data" => json_decode($reminder["information"], true),
             ]);
+            
         } catch (\Exception $e) {
-            // Log error
-            $logger->log(
-                "ERROR",
-                "Failed to fetch reminder: " . $e->getMessage(),
-                null,
-                ["actor_type" => "DENTIST"],
-            );
-
-            return new JsonResponse(
-                [
-                    "status" => "error",
-                    "message" => $e->getMessage(),
-                ],
-                500,
-            );
+            $logger->log("ERROR", "Failed to fetch reminder: " . $e->getMessage(), null, ["actor_type" => "DENTIST"]);
+            return new JsonResponse(["status" => "error", "message" => $e->getMessage()], 500);
         }
     }
 
@@ -181,86 +185,10 @@ class Reminder extends AbstractController
         Request $req,
         Connection $connection,
         ActivityLogger $logger,
+        WebSocketNotificationService $wsNotification,
     ): JsonResponse {
-        try {
-            $data = json_decode($req->getContent(), true);
-            $appointmentID = $data["id"] ?? null;
-            $payload = $data["payload"] ?? null;
-            $user = $this->getUser();
-            $userRole = $user->getRoles();
-            if (!in_array('ROLE_DENTIST', $userRole)) {
-                return new JsonResponse([
-                    'status' => 'error',
-                    'message' => 'Forbidden'
-                ], 403);
-            }
-            if (!$appointmentID || !$payload) {
-                return new JsonResponse(
-                    [
-                        "status" => "error",
-                        "message" => "Missing id or payload",
-                    ],
-                    400,
-                );
-            }
-
-            $existing = $connection->fetchAssociative(
-                "SELECT * FROM reminder WHERE appointment_id = ?",
-                [$appointmentID],
-            );
-
-            if ($existing) {
-                $connection->update(
-                    "reminder",
-                    [
-                        "information" => json_encode($payload),
-                    ],
-                    ["appointment_id" => $appointmentID],
-                );
-
-                $actionKey = "REMINDER_UPDATED";
-                $message = "Reminder updated for appointmentID {$appointmentID}";
-                $snapshotData = $existing;
-                $responseMessage = "Reminder updated successfully";
-            } else {
-                $connection->insert("reminder", [
-                    "appointment_id" => $appointmentID,
-                    "information" => json_encode($payload),
-                ]);
-
-                $actionKey = "REMINDER_CREATED";
-                $message = "Reminder created for appointmentID {$appointmentID}";
-                $snapshotData = $payload;
-                $responseMessage = "Reminder created successfully";
-            }
-
-            // Log the action via Service
-            $logger->log($actionKey, $message, null, [
-                "actor_type" => "DENTIST",
-                "appointment_id" => $appointmentID,
-                "snapshot" => $snapshotData,
-            ]);
-
-            return new JsonResponse([
-                "status" => "success",
-                "message" => $responseMessage,
-            ]);
-        } catch (\Exception $e) {
-            // Log error
-            $logger->log(
-                "ERROR",
-                "Failed to update reminder: " . $e->getMessage(),
-                null,
-                ["actor_type" => "DENTIST"],
-            );
-
-            return new JsonResponse(
-                [
-                    "status" => "error",
-                    "message" => $e->getMessage(),
-                ],
-                500,
-            );
-        }
+        // Because saveReminder handles both INSERT and UPDATE logic perfectly, 
+        // we can cleanly reuse the exact same logic here to prevent duplicate bugs.
+        return $this->saveReminder($req, $connection, $logger, $wsNotification);
     }
 }

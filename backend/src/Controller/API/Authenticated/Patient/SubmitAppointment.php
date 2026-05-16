@@ -8,6 +8,7 @@ use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\Routing\Attribute\Route;
 use Doctrine\DBAL\Connection;
 use App\Service\ActivityLogger;
+use App\Service\WebSocketNotificationService;
 
 class SubmitAppointment extends AbstractController
 {
@@ -21,17 +22,21 @@ class SubmitAppointment extends AbstractController
         Request $req,
         Connection $connection,
         ActivityLogger $logger,
+        WebSocketNotificationService $wsNotification,
     ): JsonResponse {
         date_default_timezone_set("Asia/Manila");
         try {
             // authenticated user
             $user = $this->getUser();
             $userRole = $user->getRoles();
-            if (!in_array('ROLE_PATIENT', $userRole)) {
-                return new JsonResponse([
-                    'status' => 'error',
-                    'message' => 'Forbidden'
-                ], 403);
+            if (!in_array("ROLE_PATIENT", $userRole)) {
+                return new JsonResponse(
+                    [
+                        "status" => "error",
+                        "message" => "Forbidden",
+                    ],
+                    403,
+                );
             }
             $data = json_decode($req->getContent(), true);
 
@@ -120,6 +125,15 @@ class SubmitAppointment extends AbstractController
             $logger->log(
                 "APPOINTMENT_CREATED",
                 "created appointment ID {$appointmentID} (Dentist: {$dentistID})",
+            );
+
+            // Notify dentist of new appointment request
+            $patientName = $user->getUsername() ?? "Patient";
+            $wsNotification->notifyDentistNewAppointment(
+                $dentistID,
+                $appointmentID,
+                $patientName,
+                $setDate,
             );
 
             return new JsonResponse([

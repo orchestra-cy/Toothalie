@@ -7,7 +7,6 @@ use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\Routing\Attribute\Route;
 use Doctrine\DBAL\Connection;
-use Doctrine\DBAL\ArrayParameterType;
 
 final class GetHistory extends AbstractController
 {
@@ -16,121 +15,89 @@ final class GetHistory extends AbstractController
     {
         try {
             $data = json_decode($request->getContent(), true);
-            $userID = $data['userID'] ?? null;
-            $role = $data['role'];
 
-            $queryBase = "";
-            
+            $userID = $data['userID'] ?? null;
+            $role = strtoupper($data['role'] ?? '');
+
+            if (!$userID || !$role) {
+                return new JsonResponse([
+                    'status' => 'error',
+                    'message' => 'Missing required parameter: userID or role',
+                ], 400);
+            }
+
+            // Determine which appointments belong to the user
             $queryBase = match ($role) {
                 'DENTIST' => "SELECT id FROM appointment WHERE dentist_id = ?",
                 'PATIENT' => "SELECT id FROM appointment WHERE patient_id = ?",
-                
-                default   => null,
+                default => null,
             };
-            
 
-            if (!$userID) {
+            if (!$queryBase) {
                 return new JsonResponse([
                     'status' => 'error',
-                    'message' => 'Missing required parameter: userID',
+                    'message' => 'Invalid role provided',
                 ], 400);
             }
-            
-            // patient_id and dentist_id
-            
-            //Get all appointment IDs for this patient
-            $ids = $connection->fetchAllAssociative(
-                $queryBase,
-                // "SELECT appointment_id FROM appointment WHERE patient_id = ? AND deleted_on IS NULL",
-                [$userID]
-            );
-            $appointmentIDs = array_column($ids, 'id');
 
+            // Fetch appointment IDs
+            $appointments = $connection->fetchAllAssociative($queryBase, [$userID]);
+            $appointmentIDs = array_column($appointments, 'id');
+
+            // If user has no appointments, still check if there are null logs
             if (empty($appointmentIDs)) {
+                $logs = $connection->fetchAllAssociative("
+                    SELECT 
+                        al.*
+                    FROM appointment_log al
+                    WHERE al.appointment_id IS NULL
+                    ORDER BY al.logged_at DESC
+                ");
+
                 return new JsonResponse([
                     'status' => 'ok',
-                    'message' => 'No appointments found for this patient',
-                    'data' => []
+                    'count' => count($logs),
+                    'data' => $logs
                 ]);
             }
 
-            $roleQuery = match ($role) {
-                'DENTIST' => "
-                    SELECT 
-                        al.*, 
-                        a.patient_id, 
-                        a.dentist_id, 
-                        a.status, 
-                        a.user_set_date,
-                
-                        -- Dentist Name
-                        dentist.first_name AS dentist_first_name,
-                        dentist.last_name AS dentist_last_name,
-                
-                        -- Patient Name
-                        patient.first_name AS patient_first_name,
-                        patient.last_name AS patient_last_name
-                
-                    FROM appointment_log al
-                    JOIN appointment a ON a.id = al.appointment_id
-                
-                    -- Join dentist user
-                    JOIN user dentist ON dentist.id = a.dentist_id
-                
-                    -- Join patient user
-                    JOIN user patient ON patient.id = a.patient_id
-                
-                    WHERE al.appointment_id IN (?)
-                    ORDER BY al.logged_at DESC
-                ",
-                'PATIENT' => "
-                    SELECT 
-                        al.*, 
-                        a.patient_id, 
-                        a.dentist_id, 
-                        a.status, 
-                        a.user_set_date,
-                
-                        -- Dentist Name
-                        dentist.first_name AS dentist_first_name,
-                        dentist.last_name AS dentist_last_name,
-                
-                        -- Patient Name
-                        patient.first_name AS patient_first_name,
-                        patient.last_name AS patient_last_name
-                
-                    FROM appointment_log al
-                    JOIN appointment a ON a.id = al.appointment_id
-                
-                    -- Join dentist user
-                    JOIN user dentist ON dentist.id = a.dentist_id
-                
-                    -- Join patient user
-                    JOIN user patient ON patient.id = a.patient_id
-                
-                    WHERE al.appointment_id IN (?)
-                    ORDER BY al.logged_at DESC
-                ",
+            // Create placeholders (?, ?, ?, ...)
+            $placeholders = implode(',', array_fill(0, count($appointmentIDs), '?'));
 
-                default => null
-            };
+            $logQuery = "
+                SELECT 
+                    al.*,
 
-            //  Fetch all logs related to those appointments
+                    a.patient_id,
+                    a.dentist_id,
+                    a.status AS current_appointment_status,
+                    a.user_set_date,
+
+                    dentist.first_name AS dentist_first_name,
+                    dentist.last_name AS dentist_last_name,
+
+                    patient.first_name AS patient_first_name,
+                    patient.last_name AS patient_last_name
+
+                FROM appointment_log al
+                LEFT JOIN appointment a ON a.id = al.appointment_id
+                LEFT JOIN user dentist ON dentist.id = a.dentist_id
+                LEFT JOIN user patient ON patient.id = a.patient_id
+
+                WHERE (
+                    al.appointment_id IN ($placeholders)
+                    OR al.appointment_id IS NULL
+                )
+
+                ORDER BY al.logged_at DESC
+            ";
+
             $logs = $connection->fetchAllAssociative(
-                $roleQuery,
-                // [$appointmentIDs,$role],
-                [$appointmentIDs],
-                [ArrayParameterType::INTEGER]
-                );
+                $logQuery,
+                array_values($appointmentIDs)
+            );
 
             return new JsonResponse([
-            // for testing
-                // 'query' => $queryBase,
-                // 'userID' => $userID,
-                // 'role' => $role,
-                // 'appointmentID' => $appointmentIDs,
-                
-                //
                 'status' => 'ok',
                 'count' => count($logs),
                 'data' => $logs

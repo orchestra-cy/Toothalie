@@ -8,6 +8,8 @@ use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\Routing\Attribute\Route;
 use Doctrine\DBAL\Connection;
 use App\Service\ActivityLogger;
+use App\Service\WebSocketNotificationService;
+use App\Entity\User;
 
 class DeleteAppointmentAPI extends AbstractController
 {
@@ -22,6 +24,7 @@ class DeleteAppointmentAPI extends AbstractController
         Request $req,
         Connection $connection,
         ActivityLogger $logger,
+        WebSocketNotificationService $wsNotification,
     ): JsonResponse {
         date_default_timezone_set("Asia/Manila");
 
@@ -29,6 +32,15 @@ class DeleteAppointmentAPI extends AbstractController
             // authenticated user
             $user = $this->getUser();
             $userRole = $user->getRoles();
+            if (!$user instanceof User) {
+                return new JsonResponse(
+                    [
+                        "status" => "error",
+                        "message" => "Invalid user",
+                    ],
+                    401,
+                );
+            }
             if (!in_array("ROLE_PATIENT", $userRole)) {
                 return new JsonResponse(
                     [
@@ -72,6 +84,16 @@ class DeleteAppointmentAPI extends AbstractController
                 ["id" => $appointmentID],
             );
 
+            $connection->insert("appointment_log", [
+                "appointment_id" => $appointmentID,
+                "actor_type" => "PATIENT",
+                "action" => "cancel",
+                "message" => "Patient cancelled the appointment request.",
+                "snapshot" => json_encode($appointment),
+                "logged_at" => new \DateTime()->format("Y-m-d H:i:s"),
+            ]);
+
+            // Log to system activity log
             $logger->log(
                 "APPOINTMENT_DELETED",
                 "Patient deleted appointment ID {$appointmentID}",
@@ -81,6 +103,18 @@ class DeleteAppointmentAPI extends AbstractController
                     "appointment_snapshot" => $appointment,
                 ],
             );
+
+            // Notify dentist of appointment cancellation
+            $dentistId = $appointment["dentist_id"] ?? null;
+            $patientName = $user->getUsername() ?? "Patient";
+
+            if ($dentistId) {
+                $wsNotification->notifyDentistAppointmentCancelled(
+                    (int) $dentistId,
+                    $appointmentID,
+                    $patientName,
+                );
+            }
 
             return new JsonResponse([
                 "status" => "success",
