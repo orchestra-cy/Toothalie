@@ -95,8 +95,8 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({
           isOpenProfilePane={openProfile}
         />
 
-        {/* Main Content Area */}
-        <SidebarInset className="flex-1 overflow-y-auto relative h-full">
+        {/* Main Content Area CLINT_JAY */}
+        <SidebarInset className="flex-1 overflow-y-auto relative h-full"> 
           <main className="flex-1 overflow-y-auto relative h-full">
             <div className="max-w-13xl mx-auto p-6 lg:p-10">
               {/* Content Header */}

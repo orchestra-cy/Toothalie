@@ -2,26 +2,27 @@ import React, { useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { CheckCircle2, XCircle, AlertTriangle, Info, X } from "lucide-react";
 
+// Updated configuration to match the mobile toast colored circular badges
 const alertConfig = {
   success: {
     icon: CheckCircle2,
-    styles: "bg-emerald-50 border-emerald-100 text-emerald-800",
+    iconBg: "bg-emerald-50 border-emerald-100",
     iconColor: "text-emerald-500",
   },
   error: {
     icon: XCircle,
-    styles: "bg-rose-50 border-rose-100 text-rose-800",
+    iconBg: "bg-rose-50 border-rose-100",
     iconColor: "text-rose-500",
   },
   warning: {
     icon: AlertTriangle,
-    styles: "bg-amber-50 border-amber-100 text-amber-800",
+    iconBg: "bg-amber-50 border-amber-100",
     iconColor: "text-amber-500",
   },
   info: {
     icon: Info,
-    styles: "bg-blue-50 border-blue-100 text-blue-800",
-    iconColor: "text-blue-500",
+    iconBg: "bg-sky-50 border-sky-100", // Switched to sky blue to match mobile theme
+    iconColor: "text-sky-500",
   },
 };
 
@@ -53,27 +54,34 @@ export default function Alert({
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, x: 20, scale: 0.95 }}
             transition={{ duration: 0.2 }}
-            className={`pointer-events-auto relative flex items-start gap-4 p-4 rounded-2xl border shadow-xl backdrop-blur-md ${config.styles}`}
+            // Mobile-matched styling: White background, soft shadow, slate border, 20px radius
+            className="pointer-events-auto bg-white rounded-[20px] shadow-xl shadow-slate-200/50 border border-slate-100 flex items-center p-4"
           >
-            {/* Icon */}
-            <div className={`mt-0.5 p-1.5 bg-white rounded-full shadow-sm ${config.iconColor}`}>
-              <Icon size={18} strokeWidth={2.5} />
+            {/* Colored Icon Badge */}
+            <div className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 mr-3 border ${config.iconBg} ${config.iconColor}`}>
+              <Icon size={20} strokeWidth={2.5} />
             </div>
 
-            {/* Content */}
-            <div className="flex-1 pt-0.5">
-              {title && <h4 className="font-bold text-sm mb-1">{title}</h4>}
-              <p className="text-sm opacity-90 leading-relaxed font-medium">
-                {message}
-              </p>
+            {/* Content matching mobile typography */}
+            <div className="flex-1 justify-center">
+              {title && (
+                <h4 className="text-sm font-extrabold text-slate-800 tracking-wide">
+                  {title}
+                </h4>
+              )}
+              {message && (
+                <p className="text-xs font-medium text-slate-500 mt-0.5 leading-relaxed">
+                  {message}
+                </p>
+              )}
             </div>
 
             {/* Close Button */}
             <button
               onClick={onClose}
-              className="p-1 hover:bg-black/5 rounded-full transition-colors"
+              className="ml-3 p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-50 rounded-full transition-colors shrink-0"
             >
-              <X size={16} className="opacity-60" />
+              <X size={16} strokeWidth={3} />
             </button>
           </motion.div>
         </div>
