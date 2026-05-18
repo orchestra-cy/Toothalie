@@ -135,7 +135,7 @@ class UpdateAppointment extends AbstractController
                     (int) $dentistId,
                     $appointmentID,
                     $patientName,
-                    "Updated appointment details",
+                    "Please review the requested changes.",
                 );
             }
 

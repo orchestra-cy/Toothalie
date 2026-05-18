@@ -25,18 +25,24 @@ class Reminder extends AbstractController
         try {
             $user = $this->getUser();
             if (!$user instanceof User) {
-                return new JsonResponse([
-                    "status" => "error",
-                    "message" => "Invalid user",
-                ], 401);
+                return new JsonResponse(
+                    [
+                        "status" => "error",
+                        "message" => "Invalid user",
+                    ],
+                    401,
+                );
             }
-            
+
             $userRole = $user->getRoles();
             if (!in_array("ROLE_DENTIST", $userRole)) {
-                return new JsonResponse([
-                    "status" => "error",
-                    "message" => "Forbidden",
-                ], 403);
+                return new JsonResponse(
+                    [
+                        "status" => "error",
+                        "message" => "Forbidden",
+                    ],
+                    403,
+                );
             }
 
             $data = json_decode($req->getContent(), true);
@@ -44,13 +50,18 @@ class Reminder extends AbstractController
 
             // 1. EXTRACT RAW PAYLOAD
             $rawPayload = $data["payload"] ?? null;
-            $payloadArray = is_string($rawPayload) ? json_decode($rawPayload, true) : $rawPayload;
+            $payloadArray = is_string($rawPayload)
+                ? json_decode($rawPayload, true)
+                : $rawPayload;
 
             if (!$rawPayload || !$appointmentID) {
-                return new JsonResponse([
-                    "status" => "error",
-                    "message" => "Missing payload or id",
-                ], 400);
+                return new JsonResponse(
+                    [
+                        "status" => "error",
+                        "message" => "Missing payload or id",
+                    ],
+                    400,
+                );
             }
 
             // 2. EXTRACT SPECIFIC ATTRIBUTES FOR THE NOTIFICATION
@@ -61,9 +72,15 @@ class Reminder extends AbstractController
 
             // 3. GET DENTIST NAME SAFELY (Fallback to "Your Dentist" if not found)
             $dentistName = "Your Dentist";
-            if (method_exists($user, 'getUserIdentifier') && $user->getUserIdentifier()) {
+            if (
+                method_exists($user, "getUserIdentifier") &&
+                $user->getUserIdentifier()
+            ) {
                 $dentistName = $user->getUserIdentifier();
-            } elseif (method_exists($user, 'getUsername') && $user->getUsername()) {
+            } elseif (
+                method_exists($user, "getUsername") &&
+                $user->getUsername()
+            ) {
                 $dentistName = $user->getUsername();
             }
 
@@ -73,7 +90,9 @@ class Reminder extends AbstractController
                 [$appointmentID],
             );
 
-            $dbInformation = is_string($rawPayload) ? $rawPayload : json_encode($rawPayload);
+            $dbInformation = is_string($rawPayload)
+                ? $rawPayload
+                : json_encode($rawPayload);
 
             if ($existing) {
                 $connection->update(
@@ -109,12 +128,19 @@ class Reminder extends AbstractController
 
             if ($patientId) {
                 // Construct the base message
-                $timeString = ($startTime && $endTime) ? " between {$startTime} - {$endTime}" : "";
-                $friendlyNotificationText = "Dr. {$dentistName} set a reminder for {$aptDate}{$timeString}.";
-                
+                $timeString =
+                    $startTime && $endTime
+                        ? " at {$startTime} - {$endTime}"
+                        : "";
+                $friendlyNotificationText = "Reminder from Dr. {$dentistName} for {$aptDate}{$timeString}.";
+
                 // Append the specific message if the dentist wrote one
-                if (!empty(trim($extractedMessage))) {
-                    $friendlyNotificationText .= " Note: {$extractedMessage}";
+                $note = trim((string) $extractedMessage);
+                if ($note !== "") {
+                    $friendlyNotificationText .= " Note: {$note}";
+                    if (!preg_match('/[.!?]$/', $note)) {
+                        $friendlyNotificationText .= ".";
+                    }
                 }
 
                 $wsNotification->notifyReminder(
@@ -128,10 +154,17 @@ class Reminder extends AbstractController
                 "status" => "success",
                 "message" => "Reminder saved successfully",
             ]);
-            
         } catch (\Exception $e) {
-            $logger->log("ERROR", "Failed to save reminder: " . $e->getMessage(), null, ["actor_type" => "DENTIST"]);
-            return new JsonResponse(["status" => "error", "message" => $e->getMessage()], 500);
+            $logger->log(
+                "ERROR",
+                "Failed to save reminder: " . $e->getMessage(),
+                null,
+                ["actor_type" => "DENTIST"],
+            );
+            return new JsonResponse(
+                ["status" => "error", "message" => $e->getMessage()],
+                500,
+            );
         }
     }
 
@@ -145,14 +178,20 @@ class Reminder extends AbstractController
             $user = $this->getUser();
             $userRole = $user->getRoles();
             if (!in_array("ROLE_DENTIST", $userRole)) {
-                return new JsonResponse(["status" => "error", "message" => "Forbidden"], 403);
+                return new JsonResponse(
+                    ["status" => "error", "message" => "Forbidden"],
+                    403,
+                );
             }
-            
+
             $data = json_decode($req->getContent(), true);
             $appointmentID = $data["id"] ?? null;
 
             if (!$appointmentID) {
-                return new JsonResponse(["status" => "error", "message" => "Missing id"], 400);
+                return new JsonResponse(
+                    ["status" => "error", "message" => "Missing id"],
+                    400,
+                );
             }
 
             $reminder = $connection->fetchAssociative(
@@ -173,10 +212,17 @@ class Reminder extends AbstractController
                 "message" => "Reminder fetched successfully",
                 "data" => json_decode($reminder["information"], true),
             ]);
-            
         } catch (\Exception $e) {
-            $logger->log("ERROR", "Failed to fetch reminder: " . $e->getMessage(), null, ["actor_type" => "DENTIST"]);
-            return new JsonResponse(["status" => "error", "message" => $e->getMessage()], 500);
+            $logger->log(
+                "ERROR",
+                "Failed to fetch reminder: " . $e->getMessage(),
+                null,
+                ["actor_type" => "DENTIST"],
+            );
+            return new JsonResponse(
+                ["status" => "error", "message" => $e->getMessage()],
+                500,
+            );
         }
     }
 
@@ -187,7 +233,7 @@ class Reminder extends AbstractController
         ActivityLogger $logger,
         WebSocketNotificationService $wsNotification,
     ): JsonResponse {
-        // Because saveReminder handles both INSERT and UPDATE logic perfectly, 
+        // Because saveReminder handles both INSERT and UPDATE logic perfectly,
         // we can cleanly reuse the exact same logic here to prevent duplicate bugs.
         return $this->saveReminder($req, $connection, $logger, $wsNotification);
     }

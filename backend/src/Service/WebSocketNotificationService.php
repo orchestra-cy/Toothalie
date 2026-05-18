@@ -4,7 +4,7 @@ namespace App\Service;
 
 class WebSocketNotificationService
 {
-    private string $bridgeHost = '127.0.0.1';
+    private string $bridgeHost = "127.0.0.1";
     private int $bridgePort = 1234;
     private int $socketTimeout = 2;
     private ActivityLogger $logger;
@@ -22,22 +22,17 @@ class WebSocketNotificationService
         int $appointmentId,
         string $status,
         ?string $customTitle = null,
-        ?string $customMessage = null
+        ?string $customMessage = null,
     ): bool {
-        $title = $customTitle ?? "Appointment Update";
+        $title = $customTitle ?? $this->getStatusTitle($status);
 
         $message = $customMessage ?? $this->getStatusMessage($status);
 
-        return $this->sendNotification(
-            $patientId,
-            $title,
-            $message,
-            [
-                'type' => 'appointment_update',
-                'appointmentId' => $appointmentId,
-                'newStatus' => $status,
-            ]
-        );
+        return $this->sendNotification($patientId, $title, $message, [
+            "type" => "appointment_update",
+            "appointmentId" => $appointmentId,
+            "newStatus" => $status,
+        ]);
     }
 
     /**
@@ -46,16 +41,16 @@ class WebSocketNotificationService
     public function notifyReminder(
         int $patientId,
         int $appointmentId,
-        string $reminderData
+        string $reminderData,
     ): bool {
         return $this->sendNotification(
             $patientId,
             "Appointment Reminder",
             $reminderData,
             [
-                'type' => 'reminder',
-                'appointmentId' => $appointmentId,
-            ]
+                "type" => "reminder",
+                "appointmentId" => $appointmentId,
+            ],
         );
     }
 
@@ -66,21 +61,16 @@ class WebSocketNotificationService
         int $dentistId,
         int $appointmentId,
         string $patientName,
-        string $appointmentDate
+        string $appointmentDate,
     ): bool {
         $title = "New Appointment Request";
-        $message = "New appointment from {$patientName} on {$appointmentDate}";
+        $message = "New appointment request from {$patientName} for {$appointmentDate}. Please review and confirm availability.";
 
-        return $this->sendNotification(
-            $dentistId,
-            $title,
-            $message,
-            [
-                'type' => 'new_appointment',
-                'appointmentId' => $appointmentId,
-                'patientName' => $patientName,
-            ]
-        );
+        return $this->sendNotification($dentistId, $title, $message, [
+            "type" => "new_appointment",
+            "appointmentId" => $appointmentId,
+            "patientName" => $patientName,
+        ]);
     }
 
     /**
@@ -90,21 +80,26 @@ class WebSocketNotificationService
         int $dentistId,
         int $appointmentId,
         string $patientName,
-        string $changeDescription
+        string $changeDescription,
     ): bool {
-        $title = "Appointment Updated";
-        $message = "Patient {$patientName} updated appointment #{$appointmentId}: {$changeDescription}";
+        $title = "Appointment Updated by Patient";
+        $message = "Appointment #{$appointmentId} was updated by {$patientName}.";
 
-        return $this->sendNotification(
-            $dentistId,
-            $title,
-            $message,
-            [
-                'type' => 'appointment_updated_by_patient',
-                'appointmentId' => $appointmentId,
-                'patientName' => $patientName,
-            ]
-        );
+        $trimmedChange = trim($changeDescription);
+        if ($trimmedChange !== "") {
+            $message .= " {$trimmedChange}";
+            if (!preg_match('/[.!?]$/', $trimmedChange)) {
+                $message .= ".";
+            }
+        } else {
+            $message .= " Please review the updated details.";
+        }
+
+        return $this->sendNotification($dentistId, $title, $message, [
+            "type" => "appointment_updated_by_patient",
+            "appointmentId" => $appointmentId,
+            "patientName" => $patientName,
+        ]);
     }
 
     /**
@@ -113,21 +108,16 @@ class WebSocketNotificationService
     public function notifyDentistAppointmentCancelled(
         int $dentistId,
         int $appointmentId,
-        string $patientName
+        string $patientName,
     ): bool {
-        $title = "Appointment Cancelled";
-        $message = "Patient {$patientName} cancelled appointment #{$appointmentId}";
+        $title = "Appointment Cancelled by Patient";
+        $message = "Appointment #{$appointmentId} was cancelled by {$patientName}. The slot is now available.";
 
-        return $this->sendNotification(
-            $dentistId,
-            $title,
-            $message,
-            [
-                'type' => 'appointment_cancelled',
-                'appointmentId' => $appointmentId,
-                'patientName' => $patientName,
-            ]
-        );
+        return $this->sendNotification($dentistId, $title, $message, [
+            "type" => "appointment_cancelled",
+            "appointmentId" => $appointmentId,
+            "patientName" => $patientName,
+        ]);
     }
 
     /**
@@ -137,30 +127,30 @@ class WebSocketNotificationService
         int $userId,
         string $title,
         string $message,
-        array $metadata = []
+        array $metadata = [],
     ): bool {
         try {
             $socket = @stream_socket_client(
                 "tcp://{$this->bridgeHost}:{$this->bridgePort}",
                 $errno,
                 $errstr,
-                $this->socketTimeout
+                $this->socketTimeout,
             );
 
             if (!$socket) {
                 $this->logger->log(
                     "SOCKET_ERROR",
-                    "Failed to connect to WebSocket bridge: [$errno] $errstr"
+                    "Failed to connect to WebSocket bridge: [$errno] $errstr",
                 );
                 return false;
             }
 
             $payload = [
-                'userId' => $userId,
-                'payload' => [
-                    'title' => $title,
-                    'message' => $message,
-                    'timestamp' => date('Y-m-d H:i:s'),
+                "userId" => $userId,
+                "payload" => [
+                    "title" => $title,
+                    "message" => $message,
+                    "timestamp" => date("Y-m-d H:i:s"),
                     ...$metadata,
                 ],
             ];
@@ -171,7 +161,7 @@ class WebSocketNotificationService
             if ($written === false) {
                 $this->logger->log(
                     "SOCKET_ERROR",
-                    "Failed to write notification to socket for userId: {$userId}"
+                    "Failed to write notification to socket for userId: {$userId}",
                 );
                 fclose($socket);
                 return false;
@@ -183,19 +173,37 @@ class WebSocketNotificationService
                 "Notification sent to userId: {$userId}",
                 null,
                 [
-                    'notification_type' => $metadata['type'] ?? 'unknown',
-                    'title' => $title,
-                ]
+                    "notification_type" => $metadata["type"] ?? "unknown",
+                    "title" => $title,
+                ],
             );
 
             return true;
         } catch (\Exception $e) {
             $this->logger->log(
                 "SOCKET_ERROR",
-                "Exception sending notification: " . $e->getMessage()
+                "Exception sending notification: " . $e->getMessage(),
             );
             return false;
         }
+    }
+
+    /**
+     * Get status title based on appointment status
+     */
+    private function getStatusTitle(string $status): string
+    {
+        $normalizedStatus = strtolower(trim($status));
+
+        return match ($normalizedStatus) {
+            "accepted" => "Appointment Confirmed",
+            "rejected" => "Appointment Not Approved",
+            "completed" => "Appointment Completed",
+            "cancelled" => "Appointment Cancelled",
+            "pending" => "Appointment Pending",
+            "rescheduled" => "Appointment Rescheduled",
+            default => "Appointment Status Update",
+        };
     }
 
     /**
@@ -203,12 +211,37 @@ class WebSocketNotificationService
      */
     private function getStatusMessage(string $status): string
     {
-        return match ($status) {
-            'accepted' => 'Great news! The dentist has accepted your appointment schedule.',
-            'rejected' => 'Your appointment was declined. Please check the app for details or reschedule.',
-            'completed' => 'Your appointment has been completed. Thank you for visiting!',
-            'cancelled' => 'Your appointment has been cancelled.',
-            default => "Your appointment status has been updated to: " . strtoupper($status),
+        $normalizedStatus = strtolower(trim($status));
+
+        return match ($normalizedStatus) {
+            "accepted"
+                => "Your appointment has been confirmed by the clinic. We look forward to seeing you.",
+            "rejected"
+                => "Your appointment request was not approved by the clinic. Please choose a new time or contact the clinic.",
+            "completed"
+                => "Your appointment is marked as completed. Thank you for visiting.",
+            "cancelled"
+                => "Your appointment has been cancelled by the clinic. If this was unexpected, please contact us.",
+            "pending"
+                => "Your appointment request is pending review. We'll notify you once it's confirmed.",
+            "rescheduled"
+                => "Your appointment has been rescheduled by the clinic. Please check the updated date and time.",
+            default => "The clinic updated your appointment status to " .
+                $this->formatStatus($status) .
+                ".",
         };
+    }
+
+    private function formatStatus(string $status): string
+    {
+        $trimmedStatus = trim($status);
+
+        if ($trimmedStatus === "") {
+            return "Updated";
+        }
+
+        $cleanStatus = str_replace(["_", "-"], " ", strtolower($trimmedStatus));
+
+        return ucwords($cleanStatus);
     }
 }
