@@ -1,23 +1,23 @@
 <?php
-//  THIS IS JUST A REFERENCE FILE 
-//  THIS IS JUST A REFERENCE FILE 
-//  THIS IS JUST A REFERENCE FILE 
-//  THIS IS JUST A REFERENCE FILE 
-//  THIS IS JUST A REFERENCE FILE 
-//  THIS IS JUST A REFERENCE FILE 
-//  THIS IS JUST A REFERENCE FILE 
-//  THIS IS JUST A REFERENCE FILE 
-//  THIS IS JUST A REFERENCE FILE 
-//  THIS IS JUST A REFERENCE FILE 
-//  THIS IS JUST A REFERENCE FILE 
-//  THIS IS JUST A REFERENCE FILE 
-//  THIS IS JUST A REFERENCE FILE 
-//  THIS IS JUST A REFERENCE FILE 
-//  THIS IS JUST A REFERENCE FILE 
-//  THIS IS JUST A REFERENCE FILE 
-//  THIS IS JUST A REFERENCE FILE 
-//  THIS IS JUST A REFERENCE FILE 
-//  THIS IS JUST A REFERENCE FILE 
+//  THIS IS JUST A REFERENCE FILE
+//  THIS IS JUST A REFERENCE FILE
+//  THIS IS JUST A REFERENCE FILE
+//  THIS IS JUST A REFERENCE FILE
+//  THIS IS JUST A REFERENCE FILE
+//  THIS IS JUST A REFERENCE FILE
+//  THIS IS JUST A REFERENCE FILE
+//  THIS IS JUST A REFERENCE FILE
+//  THIS IS JUST A REFERENCE FILE
+//  THIS IS JUST A REFERENCE FILE
+//  THIS IS JUST A REFERENCE FILE
+//  THIS IS JUST A REFERENCE FILE
+//  THIS IS JUST A REFERENCE FILE
+//  THIS IS JUST A REFERENCE FILE
+//  THIS IS JUST A REFERENCE FILE
+//  THIS IS JUST A REFERENCE FILE
+//  THIS IS JUST A REFERENCE FILE
+//  THIS IS JUST A REFERENCE FILE
+//  THIS IS JUST A REFERENCE FILE
 namespace App\Service;
 
 class WebSocketNotification
@@ -28,20 +28,26 @@ class WebSocketNotification
         string $message,
         string $appointmentID,
         string $status,
-    )
-    {
+    ) {
         // Connect to the WebSocket server
         try {
-            $instance = stream_socket_client('tcp://127.0.0.1:1234', $errno, $errstr, 1);
+            $bridgeHost = getenv("WS_BRIDGE_HOST") ?: "127.0.0.1";
+            $bridgePort = (int) (getenv("WS_BRIDGE_PORT") ?: 1234);
+            $instance = stream_socket_client(
+                "tcp://{$bridgeHost}:{$bridgePort}",
+                $errno,
+                $errstr,
+                1,
+            );
             if ($instance) {
                 $socketPayload = [
-                    'userId' => $patientId,
-                    'payload' => [
-                        'title' => $title,
-                        'message' => $message,
-                        'appointmentId' => $appointmentID,
-                        'newStatus' => $status
-                    ]
+                    "userId" => $patientId,
+                    "payload" => [
+                        "title" => $title,
+                        "message" => $message,
+                        "appointmentId" => $appointmentID,
+                        "newStatus" => $status,
+                    ],
                 ];
                 // Send to Workerman (add \n because we used 'text' protocol)
                 fwrite($instance, json_encode($socketPayload) . "\n");

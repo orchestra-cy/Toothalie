@@ -1,40 +1,134 @@
 services:
-    # BASICS:   Image, Evironment, Port , Volumnes, Network
-    mysql:
-        image: mysql:8.0
-        restart: unless-stopped
-        environment:
-            MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD} # FOR SUPER ADMIN
-            MYSQL_DATABASE: ${MYSQL_DATABASE}
-            MYSQL_USER: ${MYSQL_USER} 
-            MYSQL_PASSWORD: ${MYSQL_PASSWORD}
-        ports:
-            - "3307:3306" #[application itself, docker port]
-        volumes:
-            - mysql_data:/var/lib/mysql
-        networks:
-            - toothalie_network
-        
-        
-    phpmyadmin:
-        image: phpmyadmin/phpmyadmin
-        restart: unless-stopped
-        environment:
-            PMA_HOST: mysql  # FOR SUPER ADMIN
-            PMA_USER: ${MYSQL_USER} 
-            PMA_PASSWORD: ${MYSQL_PASSWORD}
-        ports:
-            - "8080:80"
-        depends_on:
-            - mysql
-        networks:
-            - toothalie_network
+  # BASICS:   Image, Evironment, Port , Volumnes, Network
+  mysql:
+    image: mysql:8.0
+    restart: unless-stopped
+    env_file:
+      - ./backend/.env
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DATABASE}
+      MYSQL_USER: ${MYSQL_USER}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+    ports:
+      - "3307:3306" #[application itself, docker port]
+    volumes:
+      - mysql_data:/var/lib/mysql
+    networks:
+      - toothalie_network
+
+  phpmyadmin:
+    image: phpmyadmin/phpmyadmin
+    restart: unless-stopped
+    env_file:
+      - ./backend/.env
+    environment:
+      PMA_HOST: mysql # FOR SUPER ADMIN
+      PMA_USER: ${MYSQL_USER}
+      PMA_PASSWORD: ${MYSQL_PASSWORD}
+    ports:
+      - "8080:80"
+    depends_on:
+      - mysql
+    networks:
+      - toothalie_network
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    env_file:
+      - ./backend/.env
+    environment:
+      DATABASE_URL: "mysql://clint:clinT@mysql:3306/ToothalieDb2?serverVersion=8.0.32&charset=utf8mb4"
+      WS_BRIDGE_HOST: ws-bridge
+      WS_BRIDGE_PORT: 1234
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend:/app
+      - /app/vendor
+      - /app/var
+    depends_on:
+      - mysql
+      - ws-bridge
+    networks:
+      - toothalie_network
+
+  channel-server:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    env_file:
+      - ./backend/.env
+    environment:
+      CHANNEL_HOST: 0.0.0.0
+      CHANNEL_PORT: 2206
+    command: ["php", "/app/bin/channel-server.php", "start"]
+    networks:
+      - toothalie_network
+
+  ws-bridge:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    env_file:
+      - ./backend/.env
+    environment:
+      BRIDGE_HOST: 0.0.0.0
+      BRIDGE_PORT: 1234
+      CHANNEL_HOST: channel-server
+      CHANNEL_PORT: 2206
+    command: ["php", "/app/bin/bridge.php", "start"]
+    depends_on:
+      - channel-server
+    networks:
+      - toothalie_network
+
+  websocket-server:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    env_file:
+      - ./backend/.env
+    environment:
+      CHANNEL_HOST: channel-server
+      CHANNEL_PORT: 2206
+    command: ["php", "/app/bin/websocket-server.php", "start"]
+    ports:
+      - "8086:8086"
+    depends_on:
+      - channel-server
+    networks:
+      - toothalie_network
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      VITE_BACKEND_URL: http://backend:8000
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./frontend:/app
+      - frontend_node_modules:/app/node_modules
+    depends_on:
+      - backend
+    networks:
+      - toothalie_network
 
 volumes:
-    mysql_data:
+  mysql_data:
+  frontend_node_modules:
 
 networks:
-    toothalie_network:
-      
-# COMMAND : 
-# docker-compose --env-file C:\College_\Projects\Toothalie_Project\backend\.env up -d
+  toothalie_network:
+
+# COMMAND :
+# docker compose up -d

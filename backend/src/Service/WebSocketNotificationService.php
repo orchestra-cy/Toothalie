@@ -12,6 +12,16 @@ class WebSocketNotificationService
     public function __construct(ActivityLogger $logger)
     {
         $this->logger = $logger;
+
+        $envHost = getenv("WS_BRIDGE_HOST");
+        if ($envHost !== false && $envHost !== "") {
+            $this->bridgeHost = $envHost;
+        }
+
+        $envPort = getenv("WS_BRIDGE_PORT");
+        if ($envPort !== false && $envPort !== "") {
+            $this->bridgePort = (int) $envPort;
+        }
     }
 
     /**

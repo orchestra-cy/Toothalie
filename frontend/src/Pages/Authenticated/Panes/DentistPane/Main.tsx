@@ -1,5 +1,7 @@
-import React, { useEffect, useState, useMemo } from "react";
+import React, { useEffect, useState, useMemo, useCallback } from "react";
 import { fetchAppointmentDentist } from "@/API/Authenticated/appointment/FetchAppointment";
+// IMPORTANT: Update this import path to point to where you saved the useWebSocketManager hook
+import { useWebSocketManager } from "@/Services/WebsocketManager";
 import {
   Users,
   Calendar,
@@ -8,7 +10,7 @@ import {
   AlertCircle,
   Briefcase,
   Plus,
-  Stethoscope // Added for a more medical feel if available, otherwise fallback to Activity
+  Stethoscope
 } from "lucide-react";
 import {
   AreaChart,
@@ -26,7 +28,7 @@ import {
 } from "recharts";
 
 // --- Sub-Components ---
-const StatCard = ({ title, value, icon: Icon, colorClass, bgClass, subtitle }) => (
+const StatCard = ({ title, value, icon: Icon, colorClass, bgClass, subtitle }: any) => (
   <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm hover:shadow-md hover:-translate-y-1 transition-all duration-300 flex flex-col justify-between h-full group">
     <div className="flex justify-between items-start">
       <div>
@@ -46,12 +48,12 @@ const StatCard = ({ title, value, icon: Icon, colorClass, bgClass, subtitle }) =
   </div>
 );
 
-const CustomTooltip = ({ active, payload, label }) => {
+const CustomTooltip = ({ active, payload, label }: any) => {
   if (active && payload && payload.length) {
     return (
       <div className="bg-slate-800/95 text-white text-xs p-4 rounded-xl shadow-xl border border-slate-700 backdrop-blur-md">
         <p className="font-bold mb-2 border-b border-slate-600 pb-2 text-slate-200">{label}</p>
-        {payload.map((entry, index) => (
+        {payload.map((entry: any, index: number) => (
           <p key={index} className="flex items-center gap-2 mt-1.5">
             <span className="w-2.5 h-2.5 rounded-full shadow-sm" style={{ backgroundColor: entry.color || entry.fill }}></span>
             <span className="text-slate-300 capitalize">{entry.name}:</span> 
@@ -66,47 +68,72 @@ const CustomTooltip = ({ active, payload, label }) => {
 
 // --- Main Component ---
 export function Main() {
-  const [appointments, setAppointments] = useState([]);
+  const [appointments, setAppointments] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  
-  // --- Data Fetching ---
+
+  // 1. Format Helper (Memoized to prevent recreation on every render)
+  const formatAppointment = useCallback((item: any) => {
+    const appt = item.appointment || item; 
+    const patient = item.patient || {};
+
+    return {
+      id: appt.appointment_id,
+      date: appt.user_set_date, 
+      createdDate: appt.appointment_date, 
+      patientName: `${patient.first_name || ""} ${patient.last_name || ""}`.trim() || "Unknown Patient",
+      patientId: patient.id,
+      service: appt.service_name || "General Checkup",
+      type: appt.appointment_type_id === 2 ? "Family" : "Individual",
+      status: appt.status || "Pending",
+      emergency: appt.emergency === 1,
+      message: appt.message
+    };
+  }, []);
+
+  // 2. Real-Time Update Handler
+  // This is passed to the custom WebSocket hook. It dynamically updates the state 
+  // when a new or updated appointment comes through the Workerman socket.
+  const handleRealTimeUpdate = useCallback((rawPayload: any) => {
+    const formattedNewAppt = formatAppointment(rawPayload);
+
+    setAppointments((prev) => {
+      const exists = prev.some((a) => a.id === formattedNewAppt.id);
+      if (exists) {
+        // Replace existing record (e.g., status changed from Pending to Approved)
+        return prev.map((a) => a.id === formattedNewAppt.id ? formattedNewAppt : a);
+      }
+      // Add brand new request to the top of the list
+      return [formattedNewAppt, ...prev];
+    });
+  }, [formatAppointment]);
+
+  useWebSocketManager(handleRealTimeUpdate);
+
   useEffect(() => {
-    const fetchData = async () => {
+    let isMounted = true;
+    const fetchInitialData = async () => {
       try {
         setLoading(true);
         const data = await fetchAppointmentDentist();
         
         if (data?.status === "ok" && Array.isArray(data.appointments)) {
-          const rawAppointments = data.appointments;
-          
-          const formatted = rawAppointments.map((item) => {
-            const appt = item.appointment;
-            const patient = item.patient || {};
-
-            return {
-              id: appt.appointment_id,
-              date: appt.user_set_date, 
-              createdDate: appt.appointment_date, 
-              patientName: `${patient.first_name || ""} ${patient.last_name || ""}`.trim() || "Unknown Patient",
-              patientId: patient.id,
-              service: appt.service_name || "General Checkup",
-              type: appt.appointment_type_id === 2 ? "Family" : "Individual",
-              status: appt.status || "Pending",
-              emergency: appt.emergency === 1,
-              message: appt.message
-            };
-          });
-
-          setAppointments(formatted);
+          if (isMounted) {
+            setAppointments(data.appointments.map(formatAppointment));
+          }
         }
       } catch (err) {
         console.error("Dashboard Data Error:", err);
       } finally {
-        setLoading(false);
+        if (isMounted) setLoading(false);
       }
     };
-    fetchData();
-  }, []);
+
+    fetchInitialData();
+    
+    return () => { 
+      isMounted = false; 
+    };
+  }, [formatAppointment]);
 
   // --- Derived Metrics ---
   const stats = useMemo(() => {
@@ -122,8 +149,8 @@ export function Main() {
 
   // --- Chart Data Calculation ---
   const charts = useMemo(() => {
-    // 1. Status Distribution (Donut) - Refined Medical Colors
-    const statusCounts = {};
+    // 1. Status Distribution (Donut)
+    const statusCounts: Record<string, number> = {};
     appointments.forEach(a => {
         const s = a.status || "Unknown";
         statusCounts[s] = (statusCounts[s] || 0) + 1;
@@ -140,7 +167,7 @@ export function Main() {
     });
 
     // 2. Timeline Volume (Area)
-    const timelineMap = {};
+    const timelineMap: Record<string, number> = {};
     appointments.forEach(a => {
         if(!a.date) return;
         const d = new Date(a.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
@@ -152,7 +179,7 @@ export function Main() {
         .slice(-7);
 
     // 3. Services Breakdown (Bar)
-    const serviceMap = {};
+    const serviceMap: Record<string, number> = {};
     appointments.forEach(a => {
         const s = a.service;
         serviceMap[s] = (serviceMap[s] || 0) + 1;
@@ -181,7 +208,6 @@ export function Main() {
     <div className="min-h-screen p-6 md:p-10 font-ceramon text-slate-900">
       <div className="max-w-[100rem] mx-auto space-y-8">
         
-
         {/* --- 1. Real Stats Grid --- */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
           <StatCard 
@@ -324,7 +350,7 @@ export function Main() {
                             ))}
                             {appointments.length === 0 && (
                                 <tr>
-                                    <td colSpan="4" className="p-12 text-center text-slate-400 italic bg-slate-50/30">
+                                    <td colSpan={4} className="p-12 text-center text-slate-400 italic bg-slate-50/30">
                                         No appointment records found yet.
                                     </td>
                                 </tr>

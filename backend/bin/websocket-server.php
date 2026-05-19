@@ -26,13 +26,20 @@ if (!$publicKey) {
     die("CRITICAL ERROR: Could not read JWT public key\n");
 }
 
+$channelHost = getenv("CHANNEL_HOST") ?: "127.0.0.1";
+$channelPort = (int) (getenv("CHANNEL_PORT") ?: 2206);
+
 echo "[WebSocket Server] Starting on ws://0.0.0.0:8086\n";
 echo "[WebSocket Server] JWT validation enabled with RS256\n";
 
-$ws_worker->onWorkerStart = function () use (&$ws_worker) {
+$ws_worker->onWorkerStart = function () use (
+    &$ws_worker,
+    $channelHost,
+    $channelPort,
+) {
     echo "[WebSocket Server] Worker started, connecting to Channel Server...\n";
 
-    Client::connect("127.0.0.1", 2206);
+    Client::connect($channelHost, $channelPort);
 
     // Listen for notifications coming from Symfony via the Bridge
     Client::on("send_notification", function ($data) use (&$ws_worker) {
