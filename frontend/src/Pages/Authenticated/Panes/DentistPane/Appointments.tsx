@@ -1,7 +1,7 @@
 "use client";
 
-import React, { useEffect, useMemo, useState } from "react";
-import { Calendar, Loader2, Search, XCircle, RefreshCw, Users } from "lucide-react";
+import React, { useEffect, useMemo, useState, useCallback } from "react";
+import { Calendar, Loader2, Search, XCircle, RefreshCw, Users, Activity } from "lucide-react";
 
 import { fetchAppointmentDentist } from "@/API/Authenticated/appointment/FetchAppointment";
 import { UpdateDentistAppointment } from "@/API/Authenticated/appointment/EditAppointmentAPI";
@@ -31,7 +31,11 @@ const createEmptyReminderDay = (): ReminderDay => ({
   slots: [{ startTime: "", endTime: "", message: "" }],
 });
 
-export default function Appointments() {
+interface AppointmentsProps {
+  refreshTrigger?: number;
+}
+
+export default function Appointments({ refreshTrigger }: AppointmentsProps) {
   const [appointmentsData, setAppointmentsData] = useState<AppointmentItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -62,54 +66,65 @@ export default function Appointments() {
     );
   }, [appointmentsData, searchQuery]);
 
-  useEffect(() => {
-    const fetchData = async () => {
-      try {
-        setError(null);
+  // --- 1. Extracted Data Fetcher for Background Refreshing ---
+  const refreshAppointmentsData = useCallback(async (isInitialLoad = false) => {
+    try {
+      if (isInitialLoad) setLoading(true);
+      setError(null);
 
-        const data = await fetchAppointmentDentist();
-        if (data?.status === "ok" && Array.isArray(data.appointments)) {
-          const formatted: AppointmentItem[] = data.appointments.map((item: any) => {
-            const appt = item.appointment;
-            const patient = item.patient || {};
-            const schedule = item.schedule || {};
+      const data = await fetchAppointmentDentist();
+      if (data?.status === "ok" && Array.isArray(data.appointments)) {
+        const formatted: AppointmentItem[] = data.appointments.map((item: any) => {
+          const appt = item.appointment;
+          const patient = item.patient || {};
+          const schedule = item.schedule || {};
 
-            return {
-              id: String(appt.id),
-              date: appt.user_set_date,
-              time: appt.appointment_date?.split(" ")[1],
-              day_of_week: schedule.day_of_week,
-              time_slot: schedule.time_slot,
-              status: appt.status || "Pending",
-              appointment_type_id: Number(appt.appointment_type_id) || 1,
-              patient_name:
-                patient.first_name && patient.last_name
-                  ? `${patient.first_name} ${patient.last_name}`
-                  : "Unknown Patient",
-              email: patient.email,
-              phone: patient.phone || "Not provided",
-              emergency: appt.emergency,
-              message: appt.message,
-              created_at: appt.created_at,
-              appointment_date: appt.appointment_date,
-              service_name: appt.service_name,
-            };
-          });
+          return {
+            id: String(appt.id),
+            date: appt.user_set_date,
+            time: appt.appointment_date?.split(" ")[1],
+            day_of_week: schedule.day_of_week,
+            time_slot: schedule.time_slot,
+            status: appt.status || "Pending",
+            appointment_type_id: Number(appt.appointment_type_id) || 1,
+            patient_name:
+              patient.first_name && patient.last_name
+                ? `${patient.first_name} ${patient.last_name}`
+                : "Unknown Patient",
+            email: patient.email,
+            phone: patient.phone || "Not provided",
+            emergency: appt.emergency,
+            message: appt.message,
+            created_at: appt.created_at,
+            appointment_date: appt.appointment_date,
+            service_name: appt.service_name,
+          };
+        });
 
-          setAppointmentsData(formatted);
-        } else {
-          setAppointmentsData([]);
-        }
-      } catch (err) {
-        console.error("Error fetching appointments:", err);
-        setError("Failed to load appointments. Please check your connection and try again.");
-      } finally {
-        setLoading(false);
+        setAppointmentsData(formatted);
+      } else {
+        setAppointmentsData([]);
       }
-    };
+    } catch (err) {
+      console.error("Error fetching appointments:", err);
+      setError("Failed to load appointments. Please check your connection and try again.");
+    } finally {
+      if (isInitialLoad) setLoading(false);
+    }
+  }, []);
 
-    fetchData();
-  }, [loading]);
+  // --- 2. Initial Fetch on Mount ---
+  useEffect(() => {
+    refreshAppointmentsData(true);
+  }, [refreshAppointmentsData]);
+
+  // --- 3. Watch for Global WebSocket Triggers passed from UserDashboard.tsx ---
+  useEffect(() => {
+    if (refreshTrigger && refreshTrigger > 0) {
+      // Trigger a silent background fetch (no loading screen)
+      refreshAppointmentsData(false);
+    }
+  }, [refreshTrigger, refreshAppointmentsData]);
 
   const handleMode = async (mode: ModalMode) => {
     if (!viewAppointment) return;
@@ -307,7 +322,7 @@ export default function Appointments() {
           <h3 className="text-xl font-semibold text-gray-900 mb-2">Connection Error</h3>
           <p className="text-gray-500 mb-8 leading-relaxed">{error}</p>
           <button
-            onClick={() => setLoading(true)}
+            onClick={() => refreshAppointmentsData(true)}
             className="w-full flex justify-center items-center gap-2 px-6 py-2.5 bg-white border border-gray-200 text-gray-700 font-medium rounded-xl hover:bg-gray-50 transition-colors shadow-sm focus:outline-none focus:ring-2 focus:ring-gray-200"
           >
             <RefreshCw className="h-4 w-4" />
@@ -329,7 +344,7 @@ export default function Appointments() {
           Your schedule is currently clear. Incoming patient bookings will automatically appear here.
         </p>
         <button
-          onClick={() => setLoading(true)}
+          onClick={() => refreshAppointmentsData(true)}
           className="mt-8 flex items-center gap-2 px-5 py-2 text-sm font-medium text-blue-600 bg-blue-50 rounded-lg hover:bg-blue-100 transition-colors"
         >
           <RefreshCw className="h-4 w-4" />
@@ -355,7 +370,7 @@ export default function Appointments() {
             </div>
             
             <button
-              onClick={() => setLoading(true)}
+              onClick={() => refreshAppointmentsData(true)}
               className="group flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 text-gray-600 rounded-lg text-sm font-medium hover:bg-gray-50 hover:text-gray-900 transition-all shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-100"
             >
               <RefreshCw className="h-4 w-4 group-hover:rotate-180 transition-transform duration-500" />

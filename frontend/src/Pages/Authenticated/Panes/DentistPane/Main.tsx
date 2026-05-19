@@ -1,16 +1,13 @@
 import React, { useEffect, useState, useMemo, useCallback } from "react";
 import { fetchAppointmentDentist } from "@/API/Authenticated/appointment/FetchAppointment";
-// IMPORTANT: Update this import path to point to where you saved the useWebSocketManager hook
-import { useWebSocketManager } from "@/Services/WebsocketManager";
+
 import {
   Users,
   Calendar,
   Activity,
   Clock,
   AlertCircle,
-  Briefcase,
-  Plus,
-  Stethoscope
+  Briefcase
 } from "lucide-react";
 import {
   AreaChart,
@@ -67,11 +64,15 @@ const CustomTooltip = ({ active, payload, label }: any) => {
 };
 
 // --- Main Component ---
-export function Main() {
+interface MainProps {
+  refreshTrigger?: number;
+}
+
+export function Main({ refreshTrigger }: MainProps) {
   const [appointments, setAppointments] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // 1. Format Helper (Memoized to prevent recreation on every render)
+  // 1. Data Parsing Formatter
   const formatAppointment = useCallback((item: any) => {
     const appt = item.appointment || item; 
     const patient = item.patient || {};
@@ -90,52 +91,36 @@ export function Main() {
     };
   }, []);
 
-  // 2. Real-Time Update Handler
-  // This is passed to the custom WebSocket hook. It dynamically updates the state 
-  // when a new or updated appointment comes through the Workerman socket.
-  const handleRealTimeUpdate = useCallback((rawPayload: any) => {
-    const formattedNewAppt = formatAppointment(rawPayload);
-
-    setAppointments((prev) => {
-      const exists = prev.some((a) => a.id === formattedNewAppt.id);
-      if (exists) {
-        // Replace existing record (e.g., status changed from Pending to Approved)
-        return prev.map((a) => a.id === formattedNewAppt.id ? formattedNewAppt : a);
+  // 2. Extracted Data Fetcher (So we can reuse it for silent background refetching)
+  const refreshDashboardData = useCallback(async (isInitialLoad = false) => {
+    try {
+      if (isInitialLoad) setLoading(true);
+      const data = await fetchAppointmentDentist();
+      
+      if (data?.status === "ok" && Array.isArray(data.appointments)) {
+        setAppointments(data.appointments.map(formatAppointment));
       }
-      // Add brand new request to the top of the list
-      return [formattedNewAppt, ...prev];
-    });
+    } catch (err) {
+      console.error("Dashboard Fetch Data Error:", err);
+    } finally {
+      if (isInitialLoad) setLoading(false);
+    }
   }, [formatAppointment]);
 
-  useWebSocketManager(handleRealTimeUpdate);
-
+  // 3. Initial Load Mount
   useEffect(() => {
-    let isMounted = true;
-    const fetchInitialData = async () => {
-      try {
-        setLoading(true);
-        const data = await fetchAppointmentDentist();
-        
-        if (data?.status === "ok" && Array.isArray(data.appointments)) {
-          if (isMounted) {
-            setAppointments(data.appointments.map(formatAppointment));
-          }
-        }
-      } catch (err) {
-        console.error("Dashboard Data Error:", err);
-      } finally {
-        if (isMounted) setLoading(false);
-      }
-    };
+    refreshDashboardData(true);
+  }, [refreshDashboardData]);
 
-    fetchInitialData();
-    
-    return () => { 
-      isMounted = false; 
-    };
-  }, [formatAppointment]);
+  // 4. Watch for Global WebSocket Triggers
+  useEffect(() => {
+    if (refreshTrigger && refreshTrigger > 0) {
+      // Trigger a silent background fetch (no loading screen)
+      refreshDashboardData(false);
+    }
+  }, [refreshTrigger, refreshDashboardData]);
 
-  // --- Derived Metrics ---
+  // --- Derived Metrics & Chart Calculations ---
   const stats = useMemo(() => {
     const total = appointments.length;
     const uniquePatients = new Set(appointments.map(a => a.patientId)).size;
@@ -147,9 +132,7 @@ export function Main() {
     return { total, uniquePatients, emergencies, todayCount };
   }, [appointments]);
 
-  // --- Chart Data Calculation ---
   const charts = useMemo(() => {
-    // 1. Status Distribution (Donut)
     const statusCounts: Record<string, number> = {};
     appointments.forEach(a => {
         const s = a.status || "Unknown";
@@ -157,16 +140,14 @@ export function Main() {
     });
     
     const pieData = Object.keys(statusCounts).map(key => {
-        let color = "#94a3b8"; // Slate
-        if(key.toLowerCase().includes("approve")) color = "#0ea5e9"; // Sky Blue
-        if(key.toLowerCase().includes("pend")) color = "#f59e0b"; // Amber
-        if(key.toLowerCase().includes("reject")) color = "#f43f5e"; // Rose
-        if(key.toLowerCase().includes("complete")) color = "#14b8a6"; // Teal
-        
+        let color = "#94a3b8"; 
+        if(key.toLowerCase().includes("approve")) color = "#0ea5e9"; 
+        if(key.toLowerCase().includes("pend")) color = "#f59e0b"; 
+        if(key.toLowerCase().includes("reject") || key.toLowerCase().includes("cancel")) color = "#f43f5e"; 
+        if(key.toLowerCase().includes("complete")) color = "#14b8a6"; 
         return { name: key, value: statusCounts[key], color };
     });
 
-    // 2. Timeline Volume (Area)
     const timelineMap: Record<string, number> = {};
     appointments.forEach(a => {
         if(!a.date) return;
@@ -178,7 +159,6 @@ export function Main() {
         .map(([name, value]) => ({ name, value }))
         .slice(-7);
 
-    // 3. Services Breakdown (Bar)
     const serviceMap: Record<string, number> = {};
     appointments.forEach(a => {
         const s = a.service;
@@ -199,57 +179,27 @@ export function Main() {
           <Activity className="h-10 w-10 text-cyan-500 animate-pulse stroke-[1.5]" />
           <div className="absolute inset-0 border-4 border-cyan-200 rounded-full animate-ping opacity-20"></div>
         </div>
-        <p className="text-slate-500 font-medium tracking-wide">Syncing Toothalie Records...</p>
+        <p className="text-slate-500 font-medium tracking-wide">Syncing Real-Time Toothalie Records...</p>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen p-6 md:p-10 font-ceramon text-slate-900">
+    <div className="min-h-screen p-2 md:p-2 font-ceramon text-slate-900 relative">
       <div className="max-w-[100rem] mx-auto space-y-8">
         
-        {/* --- 1. Real Stats Grid --- */}
+        {/* --- 1. Stats Grid --- */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-          <StatCard 
-            title="Total Appointments" 
-            value={stats.total} 
-            icon={Calendar} 
-            bgClass="bg-blue-50" 
-            colorClass="text-blue-500"
-            subtitle="All time records"
-          />
-          <StatCard 
-            title="Unique Patients" 
-            value={stats.uniquePatients} 
-            icon={Users} 
-            bgClass="bg-cyan-50" 
-            colorClass="text-cyan-500"
-            subtitle="Distinct individuals served"
-          />
-          <StatCard 
-            title="Scheduled Today" 
-            value={stats.todayCount} 
-            icon={Clock} 
-            bgClass="bg-teal-50" 
-            colorClass="text-teal-500"
-            subtitle="Visits for today's date"
-          />
-          <StatCard 
-            title="Emergencies" 
-            value={stats.emergencies} 
-            icon={AlertCircle} 
-            bgClass="bg-rose-50" 
-            colorClass="text-rose-500"
-            subtitle="High priority cases"
-          />
+          <StatCard title="Total Appointments" value={stats.total} icon={Calendar} bgClass="bg-blue-50" colorClass="text-blue-500" subtitle="All time records" />
+          <StatCard title="Unique Patients" value={stats.uniquePatients} icon={Users} bgClass="bg-cyan-50" colorClass="text-cyan-500" subtitle="Distinct individuals served" />
+          <StatCard title="Scheduled Today" value={stats.todayCount} icon={Clock} bgClass="bg-teal-50" colorClass="text-teal-500" subtitle="Visits for today's date" />
+          <StatCard title="Emergencies" value={stats.emergencies} icon={AlertCircle} bgClass="bg-rose-50" colorClass="text-rose-500" subtitle="High priority cases" />
         </div>
 
         <div className="grid grid-cols-1 xl:grid-cols-3 gap-8">
           
-          {/* --- Left Column: Visualizations & Tables --- */}
+          {/* --- Left Column: Area Chart & Table --- */}
           <div className="xl:col-span-2 space-y-8">
-            
-            {/* Timeline Chart */}
             <div className="bg-white p-7 rounded-3xl shadow-sm border border-slate-100/60">
                 <div className="mb-6 flex justify-between items-center">
                     <div>
@@ -285,7 +235,6 @@ export function Main() {
                 </div>
             </div>
 
-            {/* Read-Only List: Latest Requests */}
             <div className="bg-white rounded-3xl shadow-sm border border-slate-100/60 overflow-hidden">
                 <div className="p-6 border-b border-slate-50 flex justify-between items-center bg-white">
                     <h3 className="text-xl font-bold text-slate-800">Recent Requests Log</h3>
@@ -306,9 +255,8 @@ export function Main() {
                                 <tr key={appt.id} className="hover:bg-slate-50/80 transition-colors group">
                                     <td className="px-6 py-4">
                                         <div className="flex items-center gap-3">
-                                            {/* Patient Avatar Placeholder */}
                                             <div className="w-9 h-9 rounded-full bg-cyan-100 text-cyan-700 flex items-center justify-center font-bold text-sm shrink-0">
-                                                {appt.patientName.charAt(0)}
+                                                {appt.patientName?.charAt(0) || '?'}
                                             </div>
                                             <div>
                                                 <p className="font-bold text-slate-800 group-hover:text-cyan-700 transition-colors">{appt.patientName}</p>
@@ -338,7 +286,7 @@ export function Main() {
                                         <div className="flex justify-end">
                                             <span className={`text-[11px] font-bold px-3 py-1 rounded-full border ${
                                                 appt.status === 'Approved' ? 'bg-emerald-50 text-emerald-600 border-emerald-200' :
-                                                appt.status === 'Rejected' ? 'bg-rose-50 text-rose-600 border-rose-200' :
+                                                appt.status === 'Rejected' || appt.status === 'Cancelled' ? 'bg-rose-50 text-rose-600 border-rose-200' :
                                                 appt.status === 'Completed' ? 'bg-teal-50 text-teal-600 border-teal-200' :
                                                 'bg-amber-50 text-amber-600 border-amber-200'
                                             }`}>
@@ -361,10 +309,8 @@ export function Main() {
             </div>
           </div>
 
-          {/* --- Right Column: Breakdown & Distribution --- */}
+          {/* --- Right Column: Donut & Bar Chart --- */}
           <div className="space-y-8">
-            
-            {/* Status Donut */}
             <div className="bg-white p-7 rounded-3xl shadow-sm border border-slate-100/60 flex flex-col items-center">
                 <div className="self-start w-full border-b border-slate-50 pb-4 mb-6 flex justify-between items-center">
                    <h3 className="text-lg font-bold text-slate-800">Status Overview</h3>
@@ -374,16 +320,7 @@ export function Main() {
                     {charts.pieData.length > 0 ? (
                         <ResponsiveContainer width="100%" height="100%">
                             <PieChart>
-                                <Pie
-                                    data={charts.pieData}
-                                    cx="50%"
-                                    cy="50%"
-                                    innerRadius={70}
-                                    outerRadius={90}
-                                    paddingAngle={3}
-                                    dataKey="value"
-                                    stroke="none"
-                                >
+                                <Pie data={charts.pieData} cx="50%" cy="50%" innerRadius={70} outerRadius={90} paddingAngle={3} dataKey="value" stroke="none">
                                     {charts.pieData.map((entry, index) => (
                                         <Cell key={`cell-${index}`} fill={entry.color} />
                                     ))}
@@ -394,15 +331,12 @@ export function Main() {
                     ) : (
                         <div className="flex items-center justify-center h-full text-slate-400 text-sm bg-slate-50/50 rounded-full border border-dashed border-slate-200 aspect-square mx-auto">No Data</div>
                     )}
-                    
-                    {/* Center Total */}
                     <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
                         <span className="text-4xl font-extrabold text-slate-800">{stats.total}</span>
                         <span className="text-[10px] text-slate-400 uppercase font-bold tracking-widest mt-1">Total</span>
                     </div>
                 </div>
 
-                {/* Legend */}
                 <div className="w-full mt-8 space-y-3 px-2">
                     {charts.pieData.map((item) => (
                         <div key={item.name} className="flex justify-between items-center text-sm p-2 hover:bg-slate-50 rounded-lg transition-colors">
@@ -416,7 +350,6 @@ export function Main() {
                 </div>
             </div>
 
-            {/* Top Services (Bar Chart) */}
             <div className="bg-white p-7 rounded-3xl shadow-sm border border-slate-100/60">
                 <h3 className="text-lg font-bold text-slate-800 mb-6 border-b border-slate-50 pb-4">Top Services</h3>
                 <div className="h-52 w-full">
@@ -424,15 +357,7 @@ export function Main() {
                         <ResponsiveContainer width="100%" height="100%">
                             <BarChart data={charts.barData} layout="vertical" barSize={16} margin={{ top: 0, right: 20, left: 0, bottom: 0 }}>
                                 <XAxis type="number" hide />
-                                <YAxis 
-                                  type="category" 
-                                  dataKey="name" 
-                                  width={110} 
-                                  tick={{fontSize: 12, fill: '#64748b', fontWeight: 500}} 
-                                  axisLine={false} 
-                                  tickLine={false} 
-                                  interval={0} 
-                                />
+                                <YAxis type="category" dataKey="name" width={110} tick={{fontSize: 12, fill: '#64748b', fontWeight: 500}} axisLine={false} tickLine={false} interval={0} />
                                 <Tooltip cursor={{fill: '#f1f5f9', opacity: 0.5 }} content={<CustomTooltip />} />
                                 <Bar dataKey="value" fill="#0ea5e9" radius={[0, 6, 6, 0]}>
                                    {charts.barData.map((entry, index) => (

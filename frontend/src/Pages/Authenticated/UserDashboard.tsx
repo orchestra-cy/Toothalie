@@ -1,4 +1,6 @@
-import React, { useState, useEffect } from "react";
+"use client";
+
+import React, { useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import DisableAccount from "../ErrorRoute/DisableAccount";
 
@@ -24,7 +26,6 @@ import { MyProfile } from "./Panes/All/MyProfile";
 import { MyAdmin } from "./Panes/Admin/MyAdmin";
 import Logs from "./Panes/Admin/Logs";
 import Schedule from "./Panes/Admin/Schedule";
-// import Estrellanes from "./Panes/Midterm_Requirement/Estrellanes";
 
 // Sidebar Imports
 import { SidebarProvider, SidebarInset } from "@/components/ui/sidebar";
@@ -36,6 +37,16 @@ import {
   type NavItem,
   type UserInfo,
 } from "@/components/app-sidebar";
+
+// WebSocket and Icons
+import { useWebSocketManager } from "@/Services/WebsocketManager";
+import { Bell, X } from "lucide-react";
+
+// alert
+import Alert from "@/components/_myComp/Alerts";
+
+// bg
+import bg from "../../assets/location.png";
 
 // ==========================================
 // Types
@@ -49,6 +60,8 @@ interface DashboardLayoutProps {
   children: React.ReactNode;
   openProfile: boolean;
   setOpenProfile: (open: boolean) => void;
+  liveAlert: { title: string; message: string; timestamp: string } | null;
+  onCloseAlert: () => void;
 }
 
 // ==========================================
@@ -63,6 +76,8 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({
   children,
   openProfile,
   setOpenProfile,
+  liveAlert,
+  onCloseAlert,
 }) => {
   const handleProfileClose = () => {
     setOpenProfile(false);
@@ -71,15 +86,40 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({
   return (
     <SidebarProvider>
       <div className="flex font-ceramon h-screen bg-gray-50 overflow-hidden font-sans text-slate-800 relative w-full">
+        {/* --- GLOBAL LIVE NOTIFICATION TOAST --- */}
+        {liveAlert && (
+          <div className="fixed top-6 right-6 z-[100] w-80 bg-white rounded-2xl shadow-xl shadow-cyan-900/10 border border-cyan-100 overflow-hidden animate-in slide-in-from-top-5 fade-in duration-300">
+            <div className="absolute top-0 left-0 w-1 h-full bg-cyan-500"></div>
+            <div className="p-4 flex items-start gap-3">
+              <div className="p-2 bg-cyan-50 text-cyan-600 rounded-xl shrink-0 mt-0.5">
+                <Bell size={18} />
+              </div>
+              <div className="flex-1 min-w-0">
+                <h4 className="text-sm font-bold text-slate-800 truncate">
+                  {liveAlert.title}
+                </h4>
+                <p className="text-xs text-slate-500 mt-1 leading-snug">
+                  {liveAlert.message}
+                </p>
+                <p className="text-[10px] font-semibold text-slate-400 mt-2 uppercase tracking-wider">
+                  {liveAlert.timestamp}
+                </p>
+              </div>
+              <button
+                onClick={onCloseAlert}
+                className="text-slate-400 hover:text-slate-600 bg-slate-50 hover:bg-slate-100 p-1.5 rounded-lg transition-colors"
+              >
+                <X size={14} strokeWidth={3} />
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* Profile Overlay Modal */}
         {openProfile && (
           <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/20 backdrop-blur-sm">
             <div className="relative">
-              <MyProfile
-                onClose={() => {
-                  handleProfileClose();
-                }}
-              />
+              <MyProfile onClose={handleProfileClose} />
             </div>
           </div>
         )}
@@ -95,8 +135,17 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({
           isOpenProfilePane={openProfile}
         />
 
-        {/* Main Content Area CLINT_JAY */}
-        <SidebarInset className="flex-1 overflow-y-auto relative h-full"> 
+        {/* Main Content Area */}
+        <SidebarInset
+          className="flex-1 overflow-y-auto relative h-full bg-cover bg-center bg-no-repeat"
+          style={{
+            backgroundImage: `url(${bg})`,
+          }}
+        >
+          {/* White overlay for dental soft look */}
+          <div className="absolute inset-0 bg-white/60 backdrop-blur-sm" />
+          {/* Optional soft radial glow */}
+          <div className="absolute inset-0 bg-gradient-to-br from-white/60 via-transparent to-cyan-50/40" />{" "}
           <main className="flex-1 overflow-y-auto relative h-full">
             <div className="max-w-13xl mx-auto p-6 lg:p-10">
               {/* Content Header */}
@@ -144,15 +193,47 @@ export default function UserDashboard() {
   const [openProfile, setOpenProfile] = useState(false);
   const [isDisable, setIsDisable] = useState(false);
 
+  // Global Notification & Refresh States
+  const [liveAlert, setLiveAlert] = useState<{
+    title: string;
+    message: string;
+    timestamp: string;
+  } | null>(null);
+  const [refreshTrigger, setRefreshTrigger] = useState(0);
+
+  // --- GLOBAL WEBSOCKET LISTENER ---
+  const handleRealTimeUpdate = useCallback((payload: any) => {
+    console.log("[Global WS] Real-time socket triggered. Payload:", payload);
+
+    if (payload) {
+      // 1. Tell whichever pane is active to fetch new data silently
+      setRefreshTrigger((prev) => prev + 1);
+
+      // 2. Show the global alert toast
+      if (payload.title && payload.message) {
+        setLiveAlert({
+          title: payload.title,
+          message: payload.message,
+          timestamp: payload.timestamp || new Date().toLocaleTimeString(),
+        });
+
+        // Auto-dismiss after 6 seconds
+        setTimeout(() => setLiveAlert(null), 6000);
+      }
+    }
+  }, []);
+
+  // Initialize the WebSocket here!
+  useWebSocketManager(handleRealTimeUpdate);
+
   useEffect(() => {
     async function fetchUserInfo() {
       try {
         const data = await GetUserInfo();
-        console.log("Fetched User:", data);
         setUserInfo(data.user);
         localStorage.setItem("ToothalieUser", JSON.stringify(data.user));
+
         if (data.user.disable) {
-          console.log("disabled");
           setIsDisable(true);
         }
         if (data.user?.roles) {
@@ -228,15 +309,17 @@ export default function UserDashboard() {
     if (isDentist) {
       switch (currentPane) {
         case "Dashboard":
-          return <Main />;
+          // Pass the trigger down!
+          return <Main refreshTrigger={refreshTrigger} />;
         case "Appointment":
-          return <Appointments />;
+          // Pass the trigger down!
+          return <Appointments refreshTrigger={refreshTrigger} />;
         case "Settings":
           return <SettingsPane />;
         case "History":
           return <HistoryPane />;
         default:
-          return <Main />;
+          return <Main refreshTrigger={refreshTrigger} />;
       }
     } else if (isPatient) {
       switch (currentPane) {
@@ -245,8 +328,6 @@ export default function UserDashboard() {
           return <UpcomingAppointment />;
         case "History":
           return <HistoryPane />;
-        // case "Estrellanes":
-        //   return <Estrellanes />
         default:
           return <UpcomingAppointment />;
       }
@@ -294,6 +375,8 @@ export default function UserDashboard() {
       onLogout={handleLogout}
       openProfile={openProfile}
       setOpenProfile={setOpenProfile}
+      liveAlert={liveAlert}
+      onCloseAlert={() => setLiveAlert(null)}
     >
       {renderPane()}
     </DashboardLayout>

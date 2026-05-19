@@ -411,58 +411,6 @@ export function AppSidebar({
             )}
           </div>
         </div>
-        {/* <div className="p-4 border-t border-gray-100 dark:border-gray-800">
-          <button
-            onClick={() => setIsDarkMode(!isDarkMode)}
-            className={`
-               flex items-center w-full rounded-lg transition-all duration-200
-               ${
-                 isCollapsed
-                   ? "justify-center p-3 hover:bg-gray-100 dark:hover:bg-gray-800"
-                   : "justify-between px-3 py-2.5 bg-gray-50 dark:bg-gray-800/50 hover:bg-gray-100 dark:hover:bg-gray-800"
-               }
-            `}
-            onMouseEnter={(e) =>
-              handleMouseEnter(e, isDarkMode ? "Light Mode" : "Dark Mode")
-            }
-            onMouseLeave={handleMouseLeave}
-          >
-            <div className="flex items-center justify-center">
-              {isDarkMode ? (
-                <Moon size={20} className="text-gray-400" />
-              ) : (
-                <Sun size={20} className="text-orange-500" />
-              )}
-              <span
-                className={`
-                  text-sm font-medium text-gray-700 dark:text-gray-200 whitespace-nowrap overflow-hidden transition-all duration-300
-                  ${
-                    isCollapsed
-                      ? "w-0 ml-0 opacity-0"
-                      : "w-auto ml-3 opacity-100 delay-75"
-                  }
-                `}
-              >
-                {isDarkMode ? "Dark Mode" : "Light Mode"}
-              </span>
-            </div>
-
-            {!isCollapsed && (
-              <div
-                className={`w-8 h-4 rounded-full relative transition-colors duration-300 ${
-                  isDarkMode ? "bg-indigo-500" : "bg-gray-300"
-                }`}
-              >
-                <div
-                  className={`absolute top-0.5 w-3 h-3 bg-white rounded-full transition-transform duration-300 shadow-sm ${
-                    isDarkMode ? "left-4.5 translate-x-0" : "left-0.5"
-                  }`}
-                  style={{ left: isDarkMode ? "18px" : "2px" }}
-                />
-              </div>
-            )}
-          </button>
-        </div> */}
       </aside>
     </div>
   );

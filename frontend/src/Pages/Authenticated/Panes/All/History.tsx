@@ -87,7 +87,7 @@ function HistoryItem({ log, isLast }: { log: any; isLast: boolean }) {
       {/* Timeline Line */}
       {!isLast && (
         <div
-          className="absolute left-[11px] sm:left-[15px] top-8 bottom-[-32px] w-0.5 bg-slate-200 group-hover:bg-slate-300 transition-colors"
+          className="absolute left-[11px] sm:left-[15px] top-8 bottom-[-32px] w-0.5 group-hover:bg-slate-300 transition-colors"
           aria-hidden="true"
         />
       )}
@@ -245,16 +245,19 @@ export default function HistoryPane() {
 
         {/* Loading State */}
         {loading && (
-          <div className="flex flex-col items-center justify-center py-20 font-ceramon">
-            <Activity className="w-10 h-10 text-indigo-600 animate-pulse stroke-1" />
-            <span className="mt-4 text-slate-500 font-medium">Loading timeline...</span>
+          <div className="flex flex-col items-center justify-center min-h-screen bg-slate-50 font-ceramon">
+            <div className="relative flex items-center justify-center w-20 h-20 mb-4 bg-cyan-50 rounded-full shadow-inner">
+              <Activity className="h-10 w-10 text-cyan-500 animate-pulse stroke-[1.5]" />
+              <div className="absolute inset-0 border-4 border-cyan-200 rounded-full animate-ping opacity-20"></div>
+            </div>
+            <p className="text-slate-500 font-medium tracking-wide">Loading Timeline...</p>
           </div>
         )}
 
         {/* Empty State */}
         {!loading && history.length === 0 && (
-          <div className="bg-white rounded-3xl shadow-sm border border-dashed border-slate-200 p-16 text-center">
-            <div className="w-16 h-16 bg-slate-50 rounded-full flex items-center justify-center mx-auto mb-4">
+          <div className=" rounded-3xl shadow-sm border border-dashed border-slate-200 p-16 text-center">
+            <div className="w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4">
               <Clock className="w-8 h-8 text-slate-300" />
             </div>
             <h3 className="text-xl font-bold text-slate-900 mb-2 font-ceramon">No History Yet</h3>

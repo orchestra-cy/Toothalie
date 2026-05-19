@@ -51,13 +51,37 @@ $ws_worker->onWorkerStart = function () use (
         }
 
         if (isset($ws_worker->userConnections[$userId])) {
-            $ws_worker->userConnections[$userId]->send(
-                json_encode([
-                    "type" => "notification",
-                    "payload" => $data["payload"],
-                ]),
-            );
-            echo "[WebSocket Server] ✓ Notification sent to user {$userId}\n";
+            $connections = $ws_worker->userConnections[$userId];
+
+            // Handle both array of connections and single connection for backward compatibility
+            if (!is_array($connections)) {
+                $connections = [$connections];
+            }
+
+            $sentCount = 0;
+            foreach ($connections as $connection) {
+                // Verify connection is still established before sending
+                if (
+                    $connection &&
+                    method_exists($connection, "getStatus") &&
+                    $connection->getStatus() ===
+                        \Workerman\Connection\TcpConnection::STATUS_ESTABLISHED
+                ) {
+                    $connection->send(
+                        json_encode([
+                            "type" => "notification",
+                            "payload" => $data["payload"],
+                        ]),
+                    );
+                    $sentCount++;
+                }
+            }
+
+            if ($sentCount > 0) {
+                echo "[WebSocket Server] ✓ Notification sent to user {$userId} ({$sentCount} connection(s))\n";
+            } else {
+                echo "[WebSocket Server] ⚠ User {$userId} has {$sentCount} active connection(s)\n";
+            }
         } else {
             echo "[WebSocket Server] ⚠ User {$userId} not connected\n";
         }
@@ -123,11 +147,26 @@ $ws_worker->onMessage = function ($connection, $data) use (
                     return;
                 }
 
-                // Store connection by user ID
+                // Store connection by user ID (support multiple connections per user)
                 $connection->userId = $userId;
-                $ws_worker->userConnections[$userId] = $connection;
 
-                echo "[WebSocket Server] ✓ AUTH SUCCESS: User {$userId} (connection: {$connection->connectionId})\n";
+                if (!isset($ws_worker->userConnections[$userId])) {
+                    $ws_worker->userConnections[$userId] = [];
+                }
+
+                // If it's not already an array, convert it
+                if (!is_array($ws_worker->userConnections[$userId])) {
+                    $ws_worker->userConnections[$userId] = [
+                        $ws_worker->userConnections[$userId],
+                    ];
+                }
+
+                $ws_worker->userConnections[$userId][] = $connection;
+
+                $connCount = is_array($ws_worker->userConnections[$userId])
+                    ? count($ws_worker->userConnections[$userId])
+                    : 1;
+                echo "[WebSocket Server] ✓ AUTH SUCCESS: User {$userId} (connection: {$connection->connectionId}) - Total connections: {$connCount}\n";
 
                 $connection->send(
                     json_encode([
@@ -202,10 +241,35 @@ $ws_worker->onClose = function ($connection) use (&$ws_worker) {
     $ws_worker->connectionCount--;
 
     if (isset($connection->userId)) {
-        if (isset($ws_worker->userConnections[$connection->userId])) {
-            unset($ws_worker->userConnections[$connection->userId]);
+        $userId = $connection->userId;
+
+        if (isset($ws_worker->userConnections[$userId])) {
+            $connections = &$ws_worker->userConnections[$userId];
+
+            // Remove this specific connection from the array
+            if (is_array($connections)) {
+                $connections = array_filter(
+                    $connections,
+                    fn($conn) => $conn !== $connection,
+                );
+
+                if (empty($connections)) {
+                    unset($ws_worker->userConnections[$userId]);
+                    echo "[WebSocket Server] ✓ User {$userId} disconnected (ID: {$connection->connectionId}) - No active connections remain\n";
+                } else {
+                    $ws_worker->userConnections[$userId] = array_values(
+                        $connections,
+                    ); // Re-index array
+                    echo "[WebSocket Server] ✓ User {$userId} disconnected (ID: {$connection->connectionId}) - " .
+                        count($ws_worker->userConnections[$userId]) .
+                        " connection(s) remain\n";
+                }
+            } else {
+                // Fallback for single connection scenario
+                unset($ws_worker->userConnections[$userId]);
+                echo "[WebSocket Server] ✓ User {$userId} disconnected (ID: {$connection->connectionId})\n";
+            }
         }
-        echo "[WebSocket Server] ✓ User {$connection->userId} disconnected (ID: {$connection->connectionId})\n";
     } else {
         echo "[WebSocket Server] ✓ Unauthenticated connection closed (ID: {$connection->connectionId})\n";
     }
