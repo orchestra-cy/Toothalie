@@ -23,14 +23,22 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Install Composer
 RUN curl -sS https://getcomposer.org/installer | php -- --install-dir=/usr/local/bin --filename=composer
 
-# Copy composer files
-COPY composer.json composer.lock ./
-
-# Allow Composer to run as root during the build to prevent plugin errors
+# Allow Composer to run as root during the build
 ENV COMPOSER_ALLOW_SUPERUSER=1
 
-# Install PHP dependencies
-RUN composer install --no-dev --optimize-autoloader --no-interaction
+# Copy ONLY composer files first (this caches the expensive download step)
+COPY composer.json composer.lock ./
+
+# Install dependencies WITHOUT running scripts or generating autoloader yet
+RUN composer install --no-dev --no-scripts --no-autoloader --no-interaction
+
+# Now copy the rest of your application code (including bin/console)
+COPY . .
+
+# Generate the autoloader and safely run Symfony scripts
+# We use "|| true" so the build doesn't fail if cache:clear tries to connect to a database that isn't running yet
+RUN composer dump-autoload --optimize \
+    && composer run-script post-install-cmd || true
 
 # Production stage
 FROM php:8.3-cli
@@ -59,20 +67,16 @@ RUN docker-php-ext-install -j$(nproc) \
 RUN echo 'opcache.enable=1' >> /usr/local/etc/php/conf.d/opcache.ini && \
     echo 'opcache.enable_cli=1' >> /usr/local/etc/php/conf.d/opcache.ini
 
-# Copy application from builder
+# Copy the entire built application from the builder stage
 COPY --from=builder /app /app
 COPY --from=builder /usr/local/bin/composer /usr/local/bin/composer
 
-# Copy application code
-COPY . .
-
-# Create necessary directories
+# Create necessary directories and set permissions
 RUN mkdir -p var/cache var/log && \
-    chmod -R 755 var
+    chmod -R 777 var
 
 # Expose ports (for documentation)
 EXPOSE 8000 2206 1234
 
 # Default command runs the Symfony development server
-# Can be overridden by docker-compose for different services
 CMD ["php", "-S", "0.0.0.0:8000", "-t", "public"]
