@@ -1,48 +1,75 @@
-FROM php:8.4-apache
+# Build stage
+FROM php:8.2-cli as builder
 
-ENV COMPOSER_ALLOW_SUPERUSER=1
-
+# Set working directory
 WORKDIR /app
 
-# 1. Install required packages and PHP extensions
-RUN apt-get update && apt-get install -y \
+# Install system dependencies required by PHP extensions and Composer
+RUN apt-get update && apt-get install -y --no-install-recommends \
     git \
-    libzip-dev \
-    zip \
     unzip \
-    libicu-dev \
-    && docker-php-ext-configure intl \
-    && docker-php-ext-install zip pdo_mysql pcntl intl opcache
+    curl \
+    libzip-dev \
+    zlib1g-dev \
+    libpq-dev \
+    && docker-php-ext-install -j$(nproc) \
+    pdo \
+    pdo_mysql \
+    zip \
+    opcache \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
 
-# 2. Configure Apache document root for Symfony
-ENV APACHE_DOCUMENT_ROOT /app/public
-RUN sed -ri -e 's!/var/www/html!${APACHE_DOCUMENT_ROOT}!g' /etc/apache2/sites-available/*.conf
-RUN sed -ri -e 's!/var/www/!/app/!g' /etc/apache2/apache2.conf /etc/apache2/conf-available/*.conf
-
-# 3. Defer PORT wiring to runtime (Railway provides PORT at container start)
-
-# 4. Install Composer and Symfony CLI
+# Install Composer
 RUN curl -sS https://getcomposer.org/installer | php -- --install-dir=/usr/local/bin --filename=composer
-RUN curl -sS https://get.symfony.com/cli/installer | bash \
-    && mv /root/.symfony5/bin/symfony /usr/local/bin/symfony
 
-# 5. Install Dependencies
+# Copy composer files
 COPY composer.json composer.lock ./
-RUN composer install --no-scripts --no-autoloader --no-interaction
 
-# 6. Copy Application Code
+# Install PHP dependencies
+RUN composer install --no-dev --optimize-autoloader --no-interaction
+
+# Production stage
+FROM php:8.2-cli
+
+# Set working directory
+WORKDIR /app
+
+# Install runtime dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libzip4 \
+    zlib1g \
+    libpq5 \
+    mysql-client \
+    procps \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install PHP extensions
+RUN docker-php-ext-install -j$(nproc) \
+    pdo \
+    pdo_mysql \
+    zip \
+    opcache
+
+# Copy PHP configuration
+RUN echo 'opcache.enable=1' >> /usr/local/etc/php/conf.d/opcache.ini && \
+    echo 'opcache.enable_cli=1' >> /usr/local/etc/php/conf.d/opcache.ini
+
+# Copy application from builder
+COPY --from=builder /app /app
+COPY --from=builder /usr/local/bin/composer /usr/local/bin/composer
+
+# Copy application code
 COPY . .
-RUN test -f .env || touch .env
-RUN composer dump-autoload --optimize
 
-# 7. Set permissions for Apache to write to cache and logs
-RUN mkdir -p var/cache var/log \
-    && chown -R www-data:www-data var/cache var/log public
+# Create necessary directories
+RUN mkdir -p var/cache var/log && \
+    chmod -R 755 var
 
-# 8. Copy and setup startup script
-# (This replaces the massive RUN echo block)
-COPY docker-start.sh /usr/local/bin/start.sh
-RUN chmod +x /usr/local/bin/start.sh
+# Expose ports (for documentation)
+EXPOSE 8000 2206 1234
 
-# 9. Execute the startup script on container boot
-CMD ["/usr/local/bin/start.sh"]
+# Default command runs the Symfony development server
+# Can be overridden by docker-compose for different services
+CMD ["php", "-S", "0.0.0.0:8000", "-t", "public"]
