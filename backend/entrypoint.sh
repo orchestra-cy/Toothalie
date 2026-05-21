@@ -7,8 +7,6 @@ php bin/console lexik:jwt:generate-keypair --skip-if-exists || true
 echo "Running database migrations..."
 php bin/console doctrine:migrations:migrate --no-interaction || true
 
-echo "Loading fixtures..."
-php bin/console doctrine:fixtures:load --append --no-interaction || true
 
 echo "Starting PHP-FPM..."
 php-fpm -F &
