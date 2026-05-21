@@ -5,13 +5,11 @@ FROM php:8.4-fpm AS builder
 
 WORKDIR /app
 
-# Install system dependencies, including Node.js for frontend assets
+# Install system dependencies (Node.js and npm removed)
 RUN apt-get update && apt-get install -y \
     git \
     unzip \
     curl \
-    nodejs \
-    npm \
     && docker-php-ext-install pdo pdo_mysql \
     && echo "memory_limit=512M" > /usr/local/etc/php/conf.d/memory-limit.ini \
     && rm -rf /var/lib/apt/lists/*
@@ -20,20 +18,20 @@ COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
 
 ENV COMPOSER_ALLOW_SUPERUSER=1
 
-# COPY composer.json composer.lock ./
-# COPY package.json package-lock.json* ./
+# 1. Copy ONLY Composer files first to cache dependencies
+COPY composer.json composer.lock ./
 
+# 2. Install dependencies (without scripts, since app code isn't copied yet)
 RUN composer install --no-interaction --no-scripts --optimize-autoloader
-RUN npm install
 
-# Copy application code
+# 3. Copy the rest of the application code
 COPY . .
-
-RUN npm run build
 
 # Generate a fallback .env if one doesn't exist
 RUN if [ ! -f .env ]; then echo "APP_ENV=prod\nAPP_DEBUG=false\nAPP_SECRET=SomeRandomString" > .env; fi
 
+# 4. Run Symfony specific build commands
+# Run composer install again to trigger scripts now that the code is present
 RUN composer install --no-interaction --optimize-autoloader --no-ansi || true
 RUN php bin/console importmap:install --no-interaction || true
 RUN php bin/console cache:warmup --env=prod --no-debug || true
