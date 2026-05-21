@@ -32,11 +32,13 @@ COPY composer.json composer.lock ./
 # Install dependencies WITHOUT running scripts or generating autoloader yet
 RUN composer install --no-dev --no-scripts --no-autoloader --no-interaction
 
-# Now copy the rest of your application code (including bin/console)
+# Now copy the rest of your application code
 COPY . .
 
+# Ensure a .env file exists (prevents crashes if .env is blocked by .dockerignore)
+RUN touch .env
+
 # Generate the autoloader and safely run Symfony scripts
-# We use "|| true" so the build doesn't fail if cache:clear tries to connect to a database that isn't running yet
 RUN composer dump-autoload --optimize \
     && composer run-script post-install-cmd || true
 
@@ -45,6 +47,9 @@ FROM php:8.3-cli
 
 # Set working directory
 WORKDIR /app
+
+# Set default application environment
+ENV APP_ENV=prod
 
 # Install runtime dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -75,7 +80,7 @@ COPY --from=builder /usr/local/bin/composer /usr/local/bin/composer
 RUN mkdir -p var/cache var/log && \
     chmod -R 777 var
 
-# Expose ports (for documentation)
+# Expose ports
 EXPOSE 8000 2206 1234
 
 # Default command runs the Symfony development server
