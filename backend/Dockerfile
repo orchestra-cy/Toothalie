@@ -21,5 +21,8 @@ RUN composer install --no-scripts --no-autoloader --no-interaction
 
 COPY . .
 
+# Ensure .env exists in the container for Symfony runtime bootstrapping.
+RUN test -f .env || touch .env
+
 RUN composer dump-autoload --optimize
 CMD ["php", "-S", "0.0.0.0:8000", "-t", "public"]
