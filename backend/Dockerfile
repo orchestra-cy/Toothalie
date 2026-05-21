@@ -14,8 +14,9 @@ RUN apt-get update && apt-get install -y \
     && docker-php-ext-configure intl \
     && docker-php-ext-install zip pdo_mysql pcntl intl opcache
 
-# 2. FIX: Disable conflicting MPMs and enable prefork + rewrite
-RUN a2dismod mpm_event mpm_worker || true \
+# 2. FIX: Aggressively delete all MPM symlinks, then strictly enable prefork + rewrite
+RUN rm -f /etc/apache2/mods-enabled/mpm_*.load \
+    && rm -f /etc/apache2/mods-enabled/mpm_*.conf \
     && a2enmod mpm_prefork rewrite
 
 # 3. Configure Apache document root for Symfony
@@ -50,5 +51,5 @@ php bin/console lexik:jwt:generate-keypair --skip-if-exists\n\
 php bin/console doctrine:migrations:migrate --no-interaction --allow-no-migration\n\
 apache2-foreground' > /usr/local/bin/start.sh && chmod +x /usr/local/bin/start.sh
 
-# 10. Execute the startup script on container boots
+# 10. Execute the startup script on container boot
 CMD ["/usr/local/bin/start.sh"]
