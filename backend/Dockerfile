@@ -1,5 +1,5 @@
 # Build stage
-FROM php:8.2-cli AS builder
+FROM php:8.3-cli AS builder
 
 # Set working directory
 WORKDIR /app
@@ -26,11 +26,14 @@ RUN curl -sS https://getcomposer.org/installer | php -- --install-dir=/usr/local
 # Copy composer files
 COPY composer.json composer.lock ./
 
+# Allow Composer to run as root during the build to prevent plugin errors
+ENV COMPOSER_ALLOW_SUPERUSER=1
+
 # Install PHP dependencies
 RUN composer install --no-dev --optimize-autoloader --no-interaction
 
 # Production stage
-FROM php:8.2-cli
+FROM php:8.3-cli
 
 # Set working directory
 WORKDIR /app
