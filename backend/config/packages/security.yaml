@@ -55,6 +55,9 @@ security:
         - { path: ^/api/register, roles: PUBLIC_ACCESS }
         - { path: /verify-email, roles: PUBLIC_ACCESS }
         - { path: ^/api/auth/google/mobile, roles: PUBLIC_ACCESS}
+        - { path: ^/api/docs, roles: PUBLIC_ACCESS }
+        - { path: ^/api/doc, roles: PUBLIC_ACCESS }
+          
 
         - { path: ^/api/auth/me, roles: IS_AUTHENTICATED_FULLY }
         - { path: ^/api/auth-user-info, roles: IS_AUTHENTICATED_FULLY }

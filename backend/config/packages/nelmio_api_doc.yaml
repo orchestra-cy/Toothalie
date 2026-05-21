@@ -1,0 +1,34 @@
+nelmio_api_doc:
+        areas:
+            path_patterns:
+                - ^/api(?!/doc|/contexts) # Ignore API Platform's own doc routes
+        documentation:
+            info:
+                title: Toothalie Custom API
+                description: Documentation for custom controllers
+                version: 1.0.0
+            components:
+                securitySchemes:
+                    Bearer:
+                        type: http
+                        scheme: bearer
+                        bearerFormat: JWT
+            security:
+                - Bearer: []
+            paths:
+                /api/login-auth:
+                    post:
+                        tags:
+                            - Authentication
+                        summary: Get JWT token to login
+                        security: []
+                        requestBody:
+                            content:
+                                application/json:
+                                    schema:
+                                        type: object
+                                        properties:
+                                            username:
+                                                type: string
+                                            password:
+                                                type: string
