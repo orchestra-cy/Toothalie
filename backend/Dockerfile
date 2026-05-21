@@ -1,87 +1,76 @@
-# Build stage
-FROM php:8.3-cli AS builder
+# ==========================================
+# BUILD STAGE
+# ==========================================
+FROM php:8.4-fpm AS builder
 
-# Set working directory
 WORKDIR /app
 
-# Install system dependencies required by PHP extensions and Composer
-RUN apt-get update && apt-get install -y --no-install-recommends \
+# Install system dependencies, including Node.js for frontend assets
+RUN apt-get update && apt-get install -y \
     git \
     unzip \
     curl \
-    libzip-dev \
-    zlib1g-dev \
-    libpq-dev \
-    && docker-php-ext-install -j$(nproc) \
-    pdo \
-    pdo_mysql \
-    zip \
-    opcache \
-    && apt-get clean \
+    nodejs \
+    npm \
+    && docker-php-ext-install pdo pdo_mysql \
+    && echo "memory_limit=512M" > /usr/local/etc/php/conf.d/memory-limit.ini \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Composer
-RUN curl -sS https://getcomposer.org/installer | php -- --install-dir=/usr/local/bin --filename=composer
+COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
 
-# Allow Composer to run as root during the build
 ENV COMPOSER_ALLOW_SUPERUSER=1
 
-# Copy ONLY composer files first (this caches the expensive download step)
 COPY composer.json composer.lock ./
+COPY package.json package-lock.json* ./
 
-# Install dependencies WITHOUT running scripts or generating autoloader yet
-RUN composer install --no-dev --no-scripts --no-autoloader --no-interaction
+RUN composer install --no-interaction --no-scripts --optimize-autoloader
+RUN npm install
 
-# Now copy the rest of your application code
+# Copy application code
 COPY . .
 
-# Ensure a .env file exists (prevents crashes if .env is blocked by .dockerignore)
-RUN touch .env
+RUN npm run build
 
-# Generate the autoloader and safely run Symfony scripts
-RUN composer dump-autoload --optimize \
-    && composer run-script post-install-cmd || true
+# Generate a fallback .env if one doesn't exist
+RUN if [ ! -f .env ]; then echo "APP_ENV=prod\nAPP_DEBUG=false\nAPP_SECRET=SomeRandomString" > .env; fi
 
-# Production stage
-FROM php:8.3-cli
+RUN composer install --no-interaction --optimize-autoloader --no-ansi || true
+RUN php bin/console importmap:install --no-interaction || true
+RUN php bin/console cache:warmup --env=prod --no-debug || true
 
-# Set working directory
+# ==========================================
+# RUNTIME STAGE
+# ==========================================
+FROM php:8.4-fpm AS runtime
+
 WORKDIR /app
 
-# Set default application environment
-ENV APP_ENV=prod
-
-# Install runtime dependencies
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    libzip-dev \
-    zlib1g \
-    libpq5 \
-    default-mysql-client \
-    procps \
-    && apt-get clean \
+# Install Nginx and required runtime packages
+RUN apt-get update && apt-get install -y \
+    nginx \
+    curl \
+    && docker-php-ext-install pdo pdo_mysql \
+    && echo "memory_limit=512M" > /usr/local/etc/php/conf.d/memory-limit.ini \
     && rm -rf /var/lib/apt/lists/*
 
-# Install PHP extensions
-RUN docker-php-ext-install -j$(nproc) \
-    pdo \
-    pdo_mysql \
-    zip \
-    opcache
-
-# Copy PHP configuration
-RUN echo 'opcache.enable=1' >> /usr/local/etc/php/conf.d/opcache.ini && \
-    echo 'opcache.enable_cli=1' >> /usr/local/etc/php/conf.d/opcache.ini
-
-# Copy the entire built application from the builder stage
+# Copy built application from builder stage
 COPY --from=builder /app /app
-COPY --from=builder /usr/local/bin/composer /usr/local/bin/composer
 
-# Create necessary directories and set permissions
-RUN mkdir -p var/cache var/log && \
-    chmod -R 777 var
+# Set correct permissions for Symfony cache and logs
+RUN mkdir -p /app/var && \
+    chown -R www-data:www-data /app && \
+    chmod -R 755 /app && \
+    chmod -R 775 /app/var
 
-# Expose ports
-EXPOSE 8000 2206 1234
+# Setup Nginx configurations
+COPY nginx-main.conf /etc/nginx/nginx.conf
+RUN rm -rf /etc/nginx/conf.d/* /etc/nginx/sites-enabled /etc/nginx/sites
+COPY nginx.conf /etc/nginx/conf.d/symfony.conf
 
-# Default command runs the Symfony development server
-CMD ["php", "-S", "0.0.0.0:8000", "-t", "public"]
+# Setup the entrypoint script
+COPY entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh
+
+EXPOSE 80
+
+ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
