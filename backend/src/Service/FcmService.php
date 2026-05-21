@@ -11,10 +11,29 @@ class FcmService
 
     public function __construct(string $projectDir)
     {
-        // Manual initialization using the credentials file
-        $factory = new Factory()->withServiceAccount(
-            $projectDir . "/config/firebase_credentials.json",
-        );
+        // Try to load credentials from file first, then from environment variable
+        $credentialsPath = $projectDir . "/config/firebase_credentials.json";
+        
+        if (file_exists($credentialsPath)) {
+            // Load from file
+            $factory = new Factory()->withServiceAccount($credentialsPath);
+        } else {
+            // Load from environment variable (for Docker/Railway deployments)
+            $credentialsJson = $_ENV['FIREBASE_CREDENTIALS'] ?? $_SERVER['FIREBASE_CREDENTIALS'] ?? null;
+            
+            if (!$credentialsJson) {
+                throw new \RuntimeException(
+                    'Firebase credentials not found. Provide either config/firebase_credentials.json file or FIREBASE_CREDENTIALS environment variable.'
+                );
+            }
+            
+            // Write to temporary file for the Factory
+            $tempFile = sys_get_temp_dir() . '/firebase_credentials_' . uniqid() . '.json';
+            file_put_contents($tempFile, $credentialsJson);
+            register_shutdown_function(fn() => @unlink($tempFile));
+            
+            $factory = new Factory()->withServiceAccount($tempFile);
+        }
 
         $this->messaging = $factory->createMessaging();
     }
