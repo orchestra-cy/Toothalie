@@ -20,8 +20,8 @@ COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
 
 ENV COMPOSER_ALLOW_SUPERUSER=1
 
-COPY composer.json composer.lock ./
-COPY package.json package-lock.json* ./
+# COPY composer.json composer.lock ./
+# COPY package.json package-lock.json* ./
 
 RUN composer install --no-interaction --no-scripts --optimize-autoloader
 RUN npm install
