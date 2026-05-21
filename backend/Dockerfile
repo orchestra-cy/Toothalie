@@ -40,14 +40,14 @@ RUN mkdir -p var/cache var/log \
     && chown -R www-data:www-data var/cache var/log public
 
 # 8. ULTIMATE STARTUP SCRIPT
-# This physically deletes conflicting MPMs at runtime to guarantee Apache starts.
+# CRITICAL FIX: The $ in $PORT is escaped as \$ so it evaluates at RUNTIME, not build time.
 RUN echo '#!/bin/bash\n\
 set -e\n\
 \n\
 # Wire Apache to Railway port and suppress ServerName warning\n\
-if [ -n "$PORT" ]; then\n\
-    sed -i "s/Listen 80/Listen ${PORT}/" /etc/apache2/ports.conf\n\
-    sed -i "s/:80>/:${PORT}>/" /etc/apache2/sites-available/000-default.conf\n\
+if [ -n "\$PORT" ]; then\n\
+    sed -i "s/Listen 80/Listen \${PORT}/" /etc/apache2/ports.conf\n\
+    sed -i "s/:80>/:\${PORT}>/" /etc/apache2/sites-available/000-default.conf\n\
 fi\n\
 echo "ServerName localhost" >> /etc/apache2/apache2.conf\n\
 \n\
