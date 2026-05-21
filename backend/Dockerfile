@@ -1,5 +1,5 @@
 # Build stage
-FROM php:8.2-cli as builder
+FROM php:8.2-cli AS builder
 
 # Set working directory
 WORKDIR /app
@@ -37,10 +37,10 @@ WORKDIR /app
 
 # Install runtime dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    libzip4 \
+    libzip-dev \
     zlib1g \
     libpq5 \
-    mysql-client \
+    default-mysql-client \
     procps \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
