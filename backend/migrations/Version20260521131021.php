@@ -14,43 +14,20 @@ final class Version20260521131021 extends AbstractMigration
 {
     public function getDescription(): string
     {
-        return 'Seeds the database with data from the SQL dump, explicitly excluding activity_log and appointment_log.';
+        return 'Seeds the database with dynamic user and appointment data (skipping base tables already seeded in the previous migration).';
     }
 
     public function up(Schema $schema): void
     {
         // Use Nowdoc (<<<'SQL') to safely pass JSON strings and escape characters exactly as they are in the dump.
         
-        // 1. Independent Tables (role, service_type, appointment_type, estrellanes)
-        $this->addSql(<<<'SQL'
-        INSERT INTO `role` (`id`, `role_name`) VALUES
-        (1, 'PATIENT'),
-        (2, 'ADMIN'),
-        (3, 'DENTIST');
-        SQL);
-
-        $this->addSql(<<<'SQL'
-        INSERT INTO `service_type` (`id`, `name`) VALUES
-        (1, 'General Dentistry'),
-        (2, 'Pediatric Dentistry'),
-        (3, 'Orthodontics'),
-        (4, 'Cosmetic Dentistry'),
-        (5, 'Oral Surgery'),
-        (6, 'Periodontics');
-        SQL);
-
-        $this->addSql(<<<'SQL'
-        INSERT INTO `appointment_type` (`id`, `appointment_name`) VALUES
-        (1, 'Normal'),
-        (2, 'Family');
-        SQL);
-
+        // 1. Independent Table (estrellanes)
         $this->addSql(<<<'SQL'
         INSERT INTO `estrellanes` (`id`, `name`, `age`, `yr_lvl`, `course`) VALUES
         (3, 'test', 0, 0, '');
         SQL);
 
-        // 2. User Table (depends on roles conceptually, but independent in FK structure here)
+        // 2. User Table 
         $this->addSql(<<<'SQL'
         INSERT INTO `user` (`id`, `email`, `username`, `password`, `first_name`, `last_name`, `created_at`, `roles`, `disable`, `is_verified`, `verification_token`, `fcm_token`) VALUES
         (1, 'orca@g.com', 'orca', '$2y$13$ENcIgiz4c5mCSrVkuQaCMuSvvmpZgtTDh4J997/d9amdPTx3/2dv2', 'orca', 'orca', '2026-01-11 13:51:57', '[\"ROLE_PATIENT\"]', NULL, 1, NULL, NULL),
@@ -77,7 +54,7 @@ final class Version20260521131021 extends AbstractMigration
         (123, 'bowivi7410@bitmah.com', 'dingle', '$2y$13$RrboEhaBT3R8LuKhBUubb.jUQUYuPU7n0xWktwtwVF0m.SZRHK5lK', 'Dingle', 'Dingle', '2026-05-17 14:06:45', '[\"ROLE_PATIENT\"]', NULL, 1, NULL, 'c-y1U3OmTnemUgm6Q5ZInY:APA91bFFZ_Pmzdh51HEr3nbINsjsitbkrLTrL1XVMmNI-xwvHJI5zAmIGFDgKKObxjTz-dNWqmkYuumHBYNpojDJ0MiGDJMZzlemh9TWz9KNC8mISCPfU6I');
         SQL);
 
-        // 3. Dependent Tables (Schedule depends on user, Service depends on service_type)
+        // 3. Schedule Table
         $this->addSql(<<<'SQL'
         INSERT INTO `schedule` (`id`, `day_of_week`, `time_slot`, `dentistID`) VALUES
         (9, 'Monday', '09:00-10:00', 9),
@@ -105,26 +82,7 @@ final class Version20260521131021 extends AbstractMigration
         (55, 'Monday', '09:00-10:00', 23);
         SQL);
 
-        $this->addSql(<<<'SQL'
-        INSERT INTO `service` (`id`, `name`, `service_type_id`) VALUES
-        (1, 'Routine Checkup & Cleaning', 1),
-        (2, 'Dental X-Ray (Panoramic)', 1),
-        (3, 'Fluoride Treatment', 1),
-        (4, 'Child Dental Exam', 2),
-        (5, 'Sealants', 2),
-        (6, 'Braces Consultation', 3),
-        (7, 'Invisalign Adjustment', 3),
-        (8, 'Retainer Fitting', 3),
-        (9, 'Teeth Whitening', 4),
-        (10, 'Veneers Consultation', 4),
-        (11, 'Composite Bonding', 4),
-        (12, 'Wisdom Tooth Extraction', 5),
-        (13, 'Dental Implant Surgery', 5),
-        (14, 'Deep Cleaning (Scaling)', 6),
-        (15, 'Gum Graft Surgery', 6);
-        SQL);
-
-        // 4. Dentist Service mapping (depends on user, service)
+        // 4. Dentist Service mapping
         $this->addSql(<<<'SQL'
         INSERT INTO `dentist_service` (`id`, `user_id`, `service_id`) VALUES
         (1, 9, 4),
@@ -155,7 +113,7 @@ final class Version20260521131021 extends AbstractMigration
         (33, 23, 14);
         SQL);
 
-        // 5. Appointment (depends on user, schedule, service, appointment_type)
+        // 5. Appointment
         $this->addSql(<<<'SQL'
         INSERT INTO `appointment` (`id`, `appointment_date`, `emergency`, `user_set_date`, `status`, `message`, `deleted_on`, `patient_id`, `dentist_id`, `schedule_id`, `appointment_type_id`, `service_id`) VALUES
         (4, '2026-01-17 05:36:06', 0, '2026-01-26', 'Approved', 'niggers', NULL, 1, 9, 9, 1, 4),
@@ -210,7 +168,7 @@ final class Version20260521131021 extends AbstractMigration
         (79, '2026-05-20 09:19:54', 0, '2026-05-25', 'Pending', '', NULL, 114, 23, 49, 1, 1);
         SQL);
 
-        // 6. Reminder (depends on appointment)
+        // 6. Reminder
         $this->addSql(<<<'SQL'
         INSERT INTO `reminder` (`id`, `information`, `viewed`, `appointment_id`) VALUES
         (1, '\"[{\\\"id\\\":\\\"4\\\",\\\"date\\\":\\\"2026-01-22\\\",\\\"slots\\\":[{\\\"endTime\\\":\\\"22:22\\\",\\\"message\\\":\\\"para\\\",\\\"startTime\\\":\\\"22:22\\\"}]},{\\\"id\\\":\\\"6q0fhue4q\\\",\\\"date\\\":\\\"2026-01-14\\\",\\\"slots\\\":[{\\\"startTime\\\":\\\"22:22\\\",\\\"endTime\\\":\\\"22:22\\\",\\\"message\\\":\\\"awd\\\"}]}]\"', 0, 4),
@@ -221,19 +179,15 @@ final class Version20260521131021 extends AbstractMigration
 
     public function down(Schema $schema): void
     {
-        // Revert data insertions (Order of execution is important due to foreign keys)
+        // Only truncate the tables populated in this specific migration file
         $this->addSql('SET FOREIGN_KEY_CHECKS = 0');
         
         $this->addSql('TRUNCATE TABLE `reminder`');
         $this->addSql('TRUNCATE TABLE `appointment`');
         $this->addSql('TRUNCATE TABLE `dentist_service`');
-        $this->addSql('TRUNCATE TABLE `service`');
         $this->addSql('TRUNCATE TABLE `schedule`');
         $this->addSql('TRUNCATE TABLE `user`');
         $this->addSql('TRUNCATE TABLE `estrellanes`');
-        $this->addSql('TRUNCATE TABLE `appointment_type`');
-        $this->addSql('TRUNCATE TABLE `service_type`');
-        $this->addSql('TRUNCATE TABLE `role`');
         
         $this->addSql('SET FOREIGN_KEY_CHECKS = 1');
     }
