@@ -50,5 +50,5 @@ php bin/console lexik:jwt:generate-keypair --skip-if-exists\n\
 php bin/console doctrine:migrations:migrate --no-interaction --allow-no-migration\n\
 apache2-foreground' > /usr/local/bin/start.sh && chmod +x /usr/local/bin/start.sh
 
-# 10. Execute the startup script on container boot
+# 10. Execute the startup script on container boots
 CMD ["/usr/local/bin/start.sh"]
