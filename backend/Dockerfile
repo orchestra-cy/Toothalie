@@ -19,8 +19,7 @@ ENV APACHE_DOCUMENT_ROOT /app/public
 RUN sed -ri -e 's!/var/www/html!${APACHE_DOCUMENT_ROOT}!g' /etc/apache2/sites-available/*.conf
 RUN sed -ri -e 's!/var/www/!/app/!g' /etc/apache2/apache2.conf /etc/apache2/conf-available/*.conf
 
-# 3. Use Railway's dynamic PORT at runtime
-RUN sed -i 's/80/${PORT}/g' /etc/apache2/sites-available/000-default.conf /etc/apache2/ports.conf
+# 3. Defer PORT wiring to runtime (Railway provides PORT at container start)
 
 # 4. Install Composer and Symfony CLI
 RUN curl -sS https://getcomposer.org/installer | php -- --install-dir=/usr/local/bin --filename=composer
@@ -43,6 +42,15 @@ RUN mkdir -p var/cache var/log \
 # 8. ULTIMATE STARTUP SCRIPT
 # This physically deletes conflicting MPMs at runtime to guarantee Apache starts.
 RUN echo '#!/bin/bash\n\
+set -e\n\
+\n\
+# Wire Apache to Railway port and suppress ServerName warning\n\
+if [ -n "$PORT" ]; then\n\
+    sed -i "s/Listen 80/Listen ${PORT}/" /etc/apache2/ports.conf\n\
+    sed -i "s/:80>/:${PORT}>/" /etc/apache2/sites-available/000-default.conf\n\
+fi\n\
+echo "ServerName localhost" >> /etc/apache2/apache2.conf\n\
+\n\
 php bin/console lexik:jwt:generate-keypair --skip-if-exists\n\
 php bin/console doctrine:migrations:migrate --no-interaction --allow-no-migration\n\
 \n\
