@@ -39,35 +39,10 @@ RUN composer dump-autoload --optimize
 RUN mkdir -p var/cache var/log \
     && chown -R www-data:www-data var/cache var/log public
 
-# 8. ULTIMATE STARTUP SCRIPT
-# CRITICAL FIX: The $ in $PORT is escaped as \$ so it evaluates at RUNTIME, not build time.
-RUN echo '#!/bin/bash\n\
-set -e\n\
-\n\
-APP_PORT="${PORT:-8000}"\n\
-echo "Starting Apache on port: ${APP_PORT}"\n\
-\n\
-# Wire Apache to Railway port and suppress ServerName warning\n\
-sed -i "s/Listen 80/Listen ${APP_PORT}/" /etc/apache2/ports.conf\n\
-sed -i "s/:80>/:${APP_PORT}>/" /etc/apache2/sites-available/000-default.conf\n\
-grep -q "^ServerName" /etc/apache2/apache2.conf || echo "ServerName localhost" >> /etc/apache2/apache2.conf\n\
-\n\
-# Send access/error logs to stdout/stderr for Railway logs\n\
-sed -i "s|ErrorLog .*|ErrorLog /proc/self/fd/2|" /etc/apache2/sites-available/000-default.conf\n\
-sed -i "s|CustomLog .* combined|CustomLog /proc/self/fd/1 combined|" /etc/apache2/sites-available/000-default.conf\n\
-echo "Active Listen: $(grep -E \"^Listen \" /etc/apache2/ports.conf || true)"\n\
-echo "Active VirtualHost: $(grep -E \"^<VirtualHost\" /etc/apache2/sites-available/000-default.conf || true)"\n\
-\n\
-php bin/console lexik:jwt:generate-keypair --skip-if-exists\n\
-php bin/console doctrine:migrations:migrate --no-interaction --allow-no-migration\n\
-\n\
-# Forcefully remove conflicting MPM modules and enable prefork/rewrite\n\
-rm -f /etc/apache2/mods-enabled/mpm_event.*\n\
-rm -f /etc/apache2/mods-enabled/mpm_worker.*\n\
-a2enmod mpm_prefork rewrite 2>/dev/null || true\n\
-\n\
-# Start Apache\n\
-apache2-foreground' > /usr/local/bin/start.sh && chmod +x /usr/local/bin/start.sh
+# 8. Copy and setup startup script
+# (This replaces the massive RUN echo block)
+COPY docker-start.sh /usr/local/bin/start.sh
+RUN chmod +x /usr/local/bin/start.sh
 
 # 9. Execute the startup script on container boot
 CMD ["/usr/local/bin/start.sh"]
