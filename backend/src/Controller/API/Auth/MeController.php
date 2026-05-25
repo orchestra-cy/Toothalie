@@ -27,4 +27,13 @@ final class MeController extends AbstractController
             "roles" => $user?->getRoles(),
         ]);
     }
+    #[Route('/api/debug-key', name: 'debug_key', methods: ['GET'])]
+    public function getPublicKey(): JsonResponse
+    {
+        // Grabs the public key file directly from the server
+        $path = $this->getParameter('kernel.project_dir') . '/config/jwt/public.pem';
+        $key = file_get_contents($path);
+        
+        return new JsonResponse([$key, 200, ['Content-Type' => 'text/plain']]);
+    }
 }
