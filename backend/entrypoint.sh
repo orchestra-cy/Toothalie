@@ -28,9 +28,11 @@ elif [ -n "${JWT_PUBLIC_KEY:-}" ]; then
 fi
 
 if [ -f "$PRIVATE_KEY_PATH" ]; then
+  chown www-data:www-data "$PRIVATE_KEY_PATH"
   chmod 600 "$PRIVATE_KEY_PATH"
 fi
 if [ -f "$PUBLIC_KEY_PATH" ]; then
+  chown www-data:www-data "$PUBLIC_KEY_PATH"
   chmod 644 "$PUBLIC_KEY_PATH"
 fi
 
